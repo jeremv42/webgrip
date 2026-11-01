@@ -1,0 +1,16 @@
+diff --git a/node_modules/dt-sql-parser/dist/parser/common/entityCollector.js b/node_modules/dt-sql-parser/dist/parser/common/entityCollector.js
+--- a/node_modules/dt-sql-parser/dist/parser/common/entityCollector.js
++++ b/node_modules/dt-sql-parser/dist/parser/common/entityCollector.js
+@@ -325,10 +325,10 @@
+             if (entity.isAccessible !== undefined) {
+                 continue;
+             }
+-            const entityScopeDepth = (_a = entity.belongStmt.scopeDepth) !== null && _a !== void 0 ? _a : 0;
++            const entityScopeDepth = (_a = entity.belongStmt?.scopeDepth) !== null && _a !== void 0 ? _a : 0;
+             if (entity.entityContextType === EntityContextType.TABLE) {
+                 entity.isAccessible =
+-                    !!entity.belongStmt.isContainCaret &&
++                    !!entity.belongStmt?.isContainCaret &&
+                         entityScopeDepth === this._caretStmtScopeDepth;
+             }
+             else {

@@ -1,0 +1,4 @@
+html, body { overflow: hidden !important; }
+.mono { font-family: ui-monospace, 'JetBrains Mono', 'Cascadia Code', Menlo, Consolas, monospace; font-size: 13px; }
+.splitter { height: 5px; cursor: row-resize; background: rgba(var(--v-border-color), var(--v-border-opacity)); flex: none; }
+.splitter:hover { background: rgb(var(--v-theme-primary)); }

@@ -1,0 +1,118 @@
+<template>
+  <div class="d-flex flex-column h-100">
+    <div class="d-flex align-center px-2 py-1 ga-3 text-medium-emphasis bar">
+      <span>
+        {{ result.rows.length }} ligne{{ result.rows.length > 1 ? 's' : '' }}
+        <span v-if="result.truncated" class="text-warning">
+          (limité à {{ result.rows.length }}{{ result.total ? ` sur ${result.total}` : ', il y en a plus' }})
+        </span>
+      </span>
+      <span>{{ fmtMs(result.ms) }}</span>
+      <v-spacer />
+      <v-btn size="small" variant="text" prepend-icon="mdi-content-copy" @click="copy">{{ copied ? 'Copié' : 'Copier (TSV)' }}</v-btn>
+    </div>
+    <div class="grid-wrap mono">
+      <table class="grid">
+        <thead>
+          <tr>
+            <th class="rownum">#</th>
+            <th v-for="(c, i) in result.columns" :key="i" :title="c.type" @click="sortBy(i)">
+              {{ c.name }}
+              <span class="type">{{ c.type }}</span>
+              <v-icon v-if="sort.col === i" size="14">{{ sort.dir > 0 ? 'mdi-arrow-up' : 'mdi-arrow-down' }}</v-icon>
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="r in rows" :key="r.i">
+            <td class="rownum">{{ r.i + 1 }}</td>
+            <td v-for="(v, j) in r.row" :key="j" :class="{ nul: v == null, num: isNum(v) }" @dblclick="show(result.columns[j].name, v)">
+              {{ v == null ? 'NULL' : cut(v) }}
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <v-dialog v-model="cell.open" max-width="900">
+      <v-card :title="cell.name">
+        <v-card-text>
+          <pre class="mono cell-full">{{ cell.value }}</pre>
+        </v-card-text>
+        <v-card-actions>
+          <v-btn @click="navigator.clipboard.writeText(cell.value)">Copier</v-btn>
+          <v-btn color="primary" @click="cell.open = false">Fermer</v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
+  </div>
+</template>
+
+<script setup>
+import { computed, reactive, ref, watch } from 'vue'
+
+const props = defineProps({ result: Object })
+const navigator = window.navigator
+
+const sort = reactive({ col: -1, dir: 1 })
+watch(() => props.result, () => { sort.col = -1 })
+
+const isNum = (v) => typeof v === 'number' || (typeof v === 'string' && v !== '' && v.length < 40 && !isNaN(v))
+const cut = (v) => { const s = String(v); return s.length > 300 ? s.slice(0, 300) + '…' : s }
+const fmtMs = (ms) => (ms < 1000 ? `${Math.round(ms)} ms` : `${(ms / 1000).toFixed(2)} s`)
+
+function sortBy(i) {
+  if (sort.col !== i) Object.assign(sort, { col: i, dir: 1 })
+  else if (sort.dir > 0) sort.dir = -1
+  else sort.col = -1
+}
+
+const rows = computed(() => {
+  const list = props.result.rows.map((row, i) => ({ row, i }))
+  if (sort.col < 0) return list
+  const c = sort.col, d = sort.dir
+  return list.sort((a, b) => {
+    const x = a.row[c], y = b.row[c]
+    if (x == null || y == null) return x == null ? (y == null ? 0 : 1) : -1
+    const r = isNum(x) && isNum(y) ? Number(x) - Number(y) : String(x).localeCompare(String(y))
+    return r * d
+  })
+})
+
+const cell = reactive({ open: false, name: '', value: '' })
+function show(name, v) {
+  let value = v == null ? 'NULL' : String(v)
+  if (/^\s*[[{]/.test(value)) { try { value = JSON.stringify(JSON.parse(value), null, 2) } catch {} }
+  Object.assign(cell, { open: true, name, value })
+}
+
+const copied = ref(false)
+async function copy() {
+  const esc = (v) => (v == null ? '' : String(v).replace(/[\t\n\r]/g, ' '))
+  const lines = [props.result.columns.map((c) => c.name).join('\t'), ...rows.value.map((r) => r.row.map(esc).join('\t'))]
+  await navigator.clipboard.writeText(lines.join('\n'))
+  copied.value = true
+  setTimeout(() => (copied.value = false), 1500)
+}
+</script>
+
+<style scoped>
+.bar { font-size: 13px; border-bottom: 1px solid rgba(var(--v-border-color), var(--v-border-opacity)); }
+.grid-wrap { flex: 1; min-height: 0; overflow: auto; }
+.grid { border-collapse: separate; border-spacing: 0; }
+.grid th, .grid td {
+  border-right: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
+  border-bottom: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
+  padding: 2px 8px; white-space: nowrap; max-width: 420px; overflow: hidden; text-overflow: ellipsis; text-align: left;
+}
+.grid th {
+  position: sticky; top: 0; z-index: 1; cursor: pointer; font-weight: 600;
+  background: rgb(var(--v-theme-surface-light));
+}
+.grid .type { font-weight: 400; opacity: 0.5; font-size: 11px; margin-left: 4px; }
+.grid td.num { text-align: right; }
+.grid td.nul { opacity: 0.45; font-style: italic; }
+.grid .rownum { opacity: 0.5; text-align: right; position: sticky; left: 0; background: rgb(var(--v-theme-surface)); }
+.grid th.rownum { z-index: 2; background: rgb(var(--v-theme-surface-light)); opacity: 1; }
+.grid tbody tr:hover td { background: rgba(var(--v-theme-primary), 0.06); }
+.cell-full { white-space: pre-wrap; word-break: break-all; max-height: 60vh; overflow: auto; }
+</style>
