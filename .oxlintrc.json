@@ -1,0 +1,43 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["eslint", "typescript", "unicorn", "oxc", "import", "promise", "node", "vue", "vitest"],
+  "categories": {
+    "correctness": "error",
+    "suspicious": "warn",
+    "perf": "warn"
+  },
+  "env": {
+    "builtin": true,
+    "es2024": true
+  },
+  "ignorePatterns": ["dist/**", "data/**", "patches/**"],
+  "overrides": [
+    {
+      "files": ["client/**"],
+      "env": {
+        "browser": true
+      }
+    },
+    {
+      "files": ["server/**", "*.config.ts"],
+      "env": {
+        "node": true
+      }
+    },
+    {
+      "files": ["**/*.test.ts"],
+      "rules": {
+        "vitest/require-mock-type-parameters": "off",
+        "unicorn/consistent-function-scoping": "off"
+      }
+    }
+  ],
+  "rules": {
+    "eslint/no-await-in-loop": "off",
+    "eslint/no-underscore-dangle": "off",
+    "import/default": "off",
+    "import/no-unassigned-import": "off",
+    "import/no-named-as-default-member": "off",
+    "unicorn/require-post-message-target-origin": "off"
+  }
+}

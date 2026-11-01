@@ -1,20 +1,24 @@
 // Schema export for pasting into a chat: structure only, never data.
+import type { SchemaDescription, TableKind } from '../shared/types.ts'
 
-export function groupBy(rows, key) {
-  const m = new Map()
+export function groupBy<T, K>(rows: T[], key: (row: T) => K): Map<K, T[]> {
+  const m = new Map<K, T[]>()
   for (const r of rows) {
     const k = key(r)
-    if (!m.has(k)) m.set(k, [])
-    m.get(k).push(r)
+    const list = m.get(k)
+    if (list) list.push(r)
+    else m.set(k, [r])
   }
   return m
 }
 
-const KIND = { table: 'Table', view: 'Vue', matview: 'Vue matérialisée', foreign: 'Table étrangère' }
-const cell = (v) => String(v ?? '').replace(/\|/g, '\\|').replace(/\s*\n\s*/g, ' ')
+const KIND: Record<TableKind, string> = { table: 'Table', view: 'Vue', matview: 'Vue matérialisée', foreign: 'Table étrangère' }
+const cell = (v: unknown) =>
+  String(v ?? '')
+    .replace(/\|/g, '\\|')
+    .replace(/\s*\n\s*/g, ' ')
 
-// d = { engine, version, database, schema?, schemas?, tables: [{ name, kind, rows, comment, columns, foreignKeys, indexes }] }
-export function toMarkdown(d) {
+export function toMarkdown(d: SchemaDescription): string {
   const lines = [`# ${d.database} — ${d.version}`, '', `- Moteur : ${d.engine}`, `- Base : \`${d.database}\``]
   if (d.schema) lines.push(`- Schéma : \`${d.schema}\``)
   if (d.schemas?.length) lines.push(`- Schémas de la base : ${d.schemas.map((s) => `\`${s}\``).join(', ')}`)

@@ -1,13 +1,15 @@
+import type { Dialect, Statement } from './types.ts'
+
 // Split a SQL script into statements, aware of quotes, comments and
 // PostgreSQL dollar-quoting. Returns [{ sql, start, end }] (offsets into the input).
-export function splitSql(text, dialect = 'postgres') {
+export function splitSql(text: string, dialect: Dialect = 'postgres'): Statement[] {
   const my = dialect === 'mariadb'
-  const out = []
+  const out: Statement[] = []
   let start = 0
   let i = 0
   const n = text.length
 
-  const push = (end) => {
+  const push = (end: number) => {
     const raw = text.slice(start, end)
     if (stripComments(raw, my).trim()) {
       const lead = raw.length - raw.trimStart().length
@@ -18,9 +20,11 @@ export function splitSql(text, dialect = 'postgres') {
   while (i < n) {
     const c = text[i]
     const d = text[i + 1]
-    if (c === '-' && d === '-') { i = skipLine(text, i) }
-    else if (my && c === '#') { i = skipLine(text, i) }
-    else if (c === '/' && d === '*') {
+    if (c === '-' && d === '-') {
+      i = skipLine(text, i)
+    } else if (my && c === '#') {
+      i = skipLine(text, i)
+    } else if (c === '/' && d === '*') {
       const e = text.indexOf('*/', i + 2)
       i = e < 0 ? n : e + 2
     } else if (c === "'" || c === '"' || (my && c === '`')) {
@@ -40,18 +44,24 @@ export function splitSql(text, dialect = 'postgres') {
   return out
 }
 
-function skipLine(text, i) {
+function skipLine(text: string, i: number) {
   const e = text.indexOf('\n', i)
   return e < 0 ? text.length : e + 1
 }
 
-function skipQuoted(text, i, q, backslash) {
+function skipQuoted(text: string, i: number, q: string, backslash: boolean) {
   i++
   while (i < text.length) {
     const c = text[i]
-    if (backslash && c === '\\') { i += 2; continue }
+    if (backslash && c === '\\') {
+      i += 2
+      continue
+    }
     if (c === q) {
-      if (text[i + 1] === q) { i += 2; continue }
+      if (text[i + 1] === q) {
+        i += 2
+        continue
+      }
       return i + 1
     }
     i++
@@ -59,6 +69,6 @@ function skipQuoted(text, i, q, backslash) {
   return i
 }
 
-function stripComments(s, my) {
+function stripComments(s: string, my: boolean) {
   return s.replace(/\/\*[\s\S]*?(\*\/|$)/g, '').replace(my ? /(--|#)[^\n]*/g : /--[^\n]*/g, '')
 }

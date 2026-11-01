@@ -1,4 +1,6 @@
-async function request(method, url, body) {
+import type { Dialect } from '../../shared/types.ts'
+
+async function request<T>(method: string, url: string, body?: unknown): Promise<T> {
   const res = await fetch('/api' + url, {
     method,
     headers: body ? { 'content-type': 'application/json' } : {},
@@ -9,26 +11,33 @@ async function request(method, url, body) {
   return data
 }
 
-const qs = (params) => {
+type Params = Record<string, string | number | null | undefined>
+
+export const qs = (params?: Params) => {
   const p = Object.entries(params || {}).filter(([, v]) => v != null && v !== '')
-  return p.length ? '?' + new URLSearchParams(p) : ''
+  return p.length ? '?' + new URLSearchParams(p.map(([k, v]) => [k, String(v)])) : ''
 }
 
 export const api = {
-  get: (url, params) => request('GET', url + qs(params)),
-  post: (url, body) => request('POST', url, body || {}),
-  del: (url) => request('DELETE', url),
+  get: <T>(url: string, params?: Params) => request<T>('GET', url + qs(params)),
+  post: <T>(url: string, body?: unknown) => request<T>('POST', url, body || {}),
+  del: <T>(url: string) => request<T>('DELETE', url),
 }
 
-export function quoteIdent(name, dialect) {
+export function quoteIdent(name: string, dialect?: Dialect) {
   if (dialect === 'mariadb') return /^[A-Za-z_][A-Za-z0-9_$]*$/.test(name) ? name : '`' + name.replace(/`/g, '``') + '`'
   return /^[a-z_][a-z0-9_$]*$/.test(name) ? name : '"' + name.replace(/"/g, '""') + '"'
 }
 
 // navigator.clipboard only exists in secure contexts (https or localhost): over plain http (Tailscale) fall back to a textarea.
-export async function copyText(text) {
+export async function copyText(text: string) {
   if (navigator.clipboard?.writeText) {
-    try { await navigator.clipboard.writeText(text); return } catch { /* not allowed here: fall back */ }
+    try {
+      await navigator.clipboard.writeText(text)
+      return
+    } catch {
+      /* not allowed here: fall back */
+    }
   }
   const ta = document.createElement('textarea')
   ta.value = text
@@ -41,6 +50,17 @@ export async function copyText(text) {
 }
 
 export const store = {
-  get(key, def) { try { const v = localStorage.getItem('webgrip.' + key); return v == null ? def : JSON.parse(v) } catch { return def } },
-  set(key, val) { try { localStorage.setItem('webgrip.' + key, JSON.stringify(val)) } catch {} },
+  get<T>(key: string, def: T): T {
+    try {
+      const v = localStorage.getItem('webgrip.' + key)
+      return v == null ? def : JSON.parse(v)
+    } catch {
+      return def
+    }
+  },
+  set(key: string, val: unknown) {
+    try {
+      localStorage.setItem('webgrip.' + key, JSON.stringify(val))
+    } catch {}
+  },
 }

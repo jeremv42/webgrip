@@ -6,7 +6,9 @@ import './style.css'
 import App from './App.vue'
 
 let theme = 'light'
-try { theme = localStorage.getItem('webgrip.theme') || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light') } catch {}
+try {
+  theme = localStorage.getItem('webgrip.theme') || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
+} catch {}
 
 const vuetify = createVuetify({
   theme: { defaultTheme: theme },

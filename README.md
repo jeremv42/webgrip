@@ -1,6 +1,6 @@
 # WebGrip
 
-Mini-DataGrip web : Node (Express, `pg`, `mysql2`) + Vue 3 / Vuetify, sans store.
+Mini-DataGrip web en TypeScript : Node (Express, `pg`, `mysql2`) + Vue 3 / Vuetify, sans store.
 
 - Connexions PostgreSQL et MariaDB/MySQL (enregistrées dans `data/connections.json`, mots de passe en clair : outil local, écoute sur 127.0.0.1)
 - Arbre bases → schémas (Postgres) → tables/vues → colonnes, filtre, double-clic sur une table = `SELECT * … LIMIT n`
@@ -18,6 +18,18 @@ Mini-DataGrip web : Node (Express, `pg`, `mysql2`) + Vue 3 / Vuetify, sans store
 npm install
 npm run dev                      # Vite + API en watch, sur Tailscale et localhost (voir ci-dessous)
 npm run build && npm start       # http://localhost:5180 (vite preview du build)
+```
+
+Node ≥ 23.6 : l'API (`server/*.ts`) est exécutée directement, sans étape de compilation (type stripping).
+
+## Vérifier
+
+```bash
+npm run typecheck                # vue-tsc (SPA) + tsc (API)
+npm run lint                     # oxlint
+npm run format                   # oxfmt (format:check pour vérifier seulement)
+npm test                         # Vitest (test:watch en continu)
+npm run check                    # tout ce qui précède
 ```
 
 Tout passe par le port de Vite (5180) : il sert le front et proxifie `/api` vers le backend,

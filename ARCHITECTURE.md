@@ -1,13 +1,13 @@
 # Architecture
 
 WebGrip est un client SQL web minimal (PostgreSQL et MariaDB/MySQL) : une SPA Vue qui parle en JSON à une petite API Node.
-Le code tient en ~1 300 lignes, sans base de données propre ni store front-end.
+Le code (TypeScript) tient en ~2 700 lignes hors tests, sans base de données propre ni store front-end.
 
 ## Technologies
 
 | Couche | Techno | Rôle |
 |---|---|---|
-| Backend | **Node.js** (ESM), **Express 5** | API REST JSON |
+| Backend | **Node.js** (ESM, TypeScript exécuté directement), **Express 5** | API REST JSON |
 | | **pg** + **pg-cursor** | Driver PostgreSQL ; le curseur ne lit que `maxRows + 1` lignes |
 | | **mysql2** | Driver MariaDB/MySQL ; les lignes sont lues en flux (streaming), seules les `maxRows` premières sont gardées |
 | Front-end | **Vue 3** (`<script setup>`, Composition API) | SPA, état local aux composants, pas de Pinia ni de router |
@@ -17,39 +17,51 @@ Le code tient en ~1 300 lignes, sans base de données propre ni store front-end.
 | | **patch-package** | Correctif local de `dt-sql-parser` (`patches/`), réappliqué à chaque `npm install` |
 | Outillage | **Vite 8** | Serveur de dev, build, `preview` et proxy `/api` |
 | | **concurrently** | Lance l'API et Vite ensemble (`npm run dev` / `npm start`) |
+| | **TypeScript** (`vue-tsc` pour la SPA, `tsc` pour l'API) | Vérification de types seulement (`npm run typecheck`) : Vite compile le front, Node retire les types de l'API |
+| | **oxlint** / **oxfmt** (oxc) | Lint (`npm run lint`) et formatage (`npm run format`) |
+| | **Vitest** (+ `@vue/test-utils`, `happy-dom`) | Tests unitaires et de composants (`npm test`) |
 
 ## Arborescence
 
 ```
 webgrip/
-├── server/                    Backend (API seule, n'écoute que sur 127.0.0.1:3070)
-│   ├── index.js               Express : routes, connexions enregistrées, cache des drivers
+├── server/                    Backend (API seule, n'écoute que sur 127.0.0.1:3070), exécuté tel quel par Node (type stripping)
+│   ├── index.ts               Point d'entrée : lit l'environnement et écoute
+│   ├── app.ts                 createApp() Express : routes, connexions enregistrées, cache des drivers
+│   ├── describe.ts            Export de structure en Markdown (pour coller dans un chat)
 │   └── drivers/
-│       ├── postgres.js        PostgresDriver
-│       └── mariadb.js         MariadbDriver
-├── patches/                   Correctifs patch-package des dépendances
-├── describe.js            Export de structure en Markdown (pour coller dans un chat)
+│       ├── types.ts           Interface Driver commune
+│       ├── postgres.ts        PostgresDriver
+│       └── mariadb.ts         MariadbDriver
 ├── shared/
-│   └── splitSql.js            Découpage d'un script SQL en requêtes (utilisé par le serveur ET l'éditeur)
+│   ├── types.ts               Types échangés en JSON entre l'API et la SPA (connexions, résultats, complétion…)
+│   └── splitSql.ts            Découpage d'un script SQL en requêtes (utilisé par le serveur ET l'éditeur)
 ├── client/                    Front-end (racine Vite)
 │   ├── index.html
 │   └── src/
-│       ├── main.js            Création de l'app Vue + Vuetify (thème, valeurs par défaut des composants)
+│       ├── main.ts            Création de l'app Vue + Vuetify (thème, valeurs par défaut des composants)
 │       ├── App.vue            Mise en page et état global : connexion, base/schéma courants, exécution
-│       ├── api.js             fetch JSON, quoting des identifiants, petit wrapper localStorage
+│       ├── api.ts             fetch JSON, quoting des identifiants, petit wrapper localStorage
+│       ├── grid.ts            Grille : détection des nombres, tri, export TSV
 │       ├── style.css
-│       └── components/
-│           ├── ConnectionDialog.vue   Création / édition / test / suppression d'une connexion
-│           ├── DbTree.vue             Arbre bases → schémas → tables → colonnes (chargement à la demande)
-│           ├── SqlEditor.vue          Wrapper Monaco (v-model, Ctrl+Entrée, Ctrl+Maj+Entrée) et autocomplétion
-│   └── sql/
-│       ├── pgsql.worker.js    Point d'entrée du worker du parseur PostgreSQL
-│       └── mysql.worker.js    Point d'entrée du worker du parseur MySQL/MariaDB
-│           ├── ResultPanel.vue        Un onglet par requête exécutée (lignes, commande, erreur, ignorée)
-│           └── ResultGrid.vue         Grille HTML : tri, NULL, valeur complète au double-clic, copie TSV
+│       ├── components/
+│       │   ├── ConnectionDialog.vue   Création / édition / test / suppression d'une connexion
+│       │   ├── DbTree.vue             Arbre bases → schémas → tables → colonnes (chargement à la demande)
+│       │   ├── SqlEditor.vue          Wrapper Monaco (v-model, Ctrl+Entrée, Ctrl+Maj+Entrée) et autocomplétion
+│       │   ├── ResultPanel.vue        Un onglet par requête exécutée (lignes, commande, erreur, ignorée)
+│       │   └── ResultGrid.vue         Grille HTML : tri, NULL, valeur complète au double-clic, copie TSV
+│       └── sql/
+│           ├── sources.ts             Autocomplétion sans Monaco : noms, index du schéma, tables lues par la requête
+│           ├── pgsql.worker.ts        Point d'entrée du worker du parseur PostgreSQL
+│           └── mysql.worker.ts        Point d'entrée du worker du parseur MySQL/MariaDB
+├── patches/                   Correctifs patch-package des dépendances
+├── **/*.test.ts               Tests Vitest, à côté du code testé
 ├── data/connections.json      Connexions enregistrées (créé à l'exécution, ignoré par git)
 ├── dist/                      Build du front (`npm run build`)
-└── vite.config.js             Proxy /api, écoute Tailscale + localhost, alias Monaco, build
+├── tsconfig*.json             tsconfig.app.json (SPA, vue-tsc) et tsconfig.node.json (API, outillage)
+├── .oxlintrc.json / .oxfmtrc.json   Lint (oxlint) et formatage (oxfmt)
+├── vitest.config.ts           Tests (racine du projet, contrairement à Vite)
+└── vite.config.ts             Proxy /api, écoute Tailscale + localhost, alias Monaco, build
 ```
 
 ## Réseau
@@ -60,7 +72,7 @@ navigateur ──► Vite :5180 ──(/api/*)──► API Express 127.0.0.1:30
 ```
 
 - Un seul port côté navigateur : Vite sert le front et proxifie `/api` vers le backend, qui n'est **jamais** exposé (adresse `127.0.0.1` codée en dur).
-- En `npm run dev`, Vite écoute sur l'IP de l'interface `tailscale0` ; un petit plugin (`localhostForward` dans `vite.config.js`) redirige `127.0.0.1:5180` vers cette adresse pour garder `localhost` utilisable. `allowedHosts` autorise le nom de la machine et `*.ts.net` (MagicDNS). Sans Tailscale, Vite reste sur localhost.
+- En `npm run dev`, Vite écoute sur l'IP de l'interface `tailscale0` ; un petit plugin (`localhostForward` dans `vite.config.ts`) redirige `127.0.0.1:5180` vers cette adresse pour garder `localhost` utilisable. `allowedHosts` autorise le nom de la machine et `*.ts.net` (MagicDNS). Sans Tailscale, Vite reste sur localhost.
 - `npm start` = API + `vite preview` du build, sur localhost uniquement.
 - Variables : `WEB_PORT` (5180), `PORT` (port interne de l'API, 3070), `WEBGRIP_DATA` (fichier des connexions).
 
@@ -87,7 +99,7 @@ Les erreurs sont renvoyées en `4xx` avec `{ error }`. Les erreurs SQL, elles, f
 
 ### Drivers
 
-`index.js` crée paresseusement un driver par connexion enregistrée et le jette quand la connexion est modifiée ou supprimée. Les deux drivers exposent la même interface :
+`app.ts` crée paresseusement un driver par connexion enregistrée et le jette quand la connexion est modifiée ou supprimée. Les deux drivers implémentent l'interface `Driver` (`server/drivers/types.ts`) :
 
 ```
 hasSchemas
@@ -117,14 +129,14 @@ Particularités :
 
 Les lignes sont des tableaux (pas des objets) pour supporter les noms de colonnes en double. `start`/`end` sont les positions de la requête dans le texte envoyé : le front s'en sert, avec `error.position`, pour placer le curseur sur l'erreur.
 
-## Découpage SQL (`shared/splitSql.js`)
+## Découpage SQL (`shared/splitSql.ts`)
 
 Un seul module, importé par le serveur (pour exécuter requête par requête) et par l'éditeur (pour trouver la requête sous le curseur). Il coupe sur `;` en ignorant ceux situés dans les chaînes `'…'`, identifiants `"…"` / `` `…` ``, commentaires `--`, `#` (MariaDB) et `/* */`, et blocs `$tag$…$tag$` (Postgres). Il renvoie `{ sql, start, end }` pour chaque requête.
 
 ## Éditeur et autocomplétion (`SqlEditor.vue`)
 
 - **Chargement** : le cœur de Monaco et ses fonctionnalités, plus les langages `pgsql` / `mysql` de monaco-sql-languages (importés par chemins profonds : l'index du paquet chargerait les grammaires de tous les dialectes). Les parseurs (≈ 2,2 Mo chacun) tournent dans un web worker, chargé seulement pour le dialecte utilisé.
-- **Adaptation à Monaco ≥ 0.53** : monaco-sql-languages utilise encore les anciens chemins (`monaco-editor/esm/vs/...`) et l'ancienne API de workers (`createWebWorker({ moduleId, label, createData })`). Des alias dans `vite.config.js` résolvent les chemins, et `SqlEditor.vue` enveloppe `monaco.editor.createWebWorker` pour fournir le `Worker` (`client/src/sql/*.worker.js`) et lui envoyer `createData`.
+- **Adaptation à Monaco ≥ 0.53** : monaco-sql-languages utilise encore les anciens chemins (`monaco-editor/esm/vs/...`) et l'ancienne API de workers (`createWebWorker({ moduleId, label, createData })`). Des alias dans `vite.config.ts` résolvent les chemins, et `SqlEditor.vue` enveloppe `monaco.editor.createWebWorker` pour fournir le `Worker` (`client/src/sql/*.worker.ts`) et lui envoyer `createData`.
 - **Complétion** : à chaque demande, le parseur indique ce que la grammaire attend au curseur (table, colonne, fonction, base… et les mots-clés valides) et les entités de la requête (tables, alias, sous-requêtes, CTE). Le `completionService` les croise avec le schéma renvoyé par `/completion` :
   - tables de tous les schémas (non qualifiées pour le schéma courant), schémas, puis tables du schéma après `schema.` ;
   - colonnes typées des tables visibles depuis la requête, `alias.` → colonnes de cette table, colonnes des sous-requêtes et CTE (`*` développé) ;

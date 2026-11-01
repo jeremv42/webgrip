@@ -38,29 +38,47 @@
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import ResultGrid from './ResultGrid.vue'
+import type { StatementResult } from '../../../shared/types.ts'
 
-const props = defineProps({ results: Array, running: Boolean, active: Number })
+const props = defineProps<{ results: StatementResult[]; running: boolean; active?: number }>()
 const tab = ref(0)
-watch(() => props.results, () => { tab.value = props.active ?? 0 })
-const current = computed(() => props.results[tab.value])
+watch(
+  () => props.results,
+  () => {
+    tab.value = props.active ?? 0
+  },
+)
+const current = computed<StatementResult | undefined>(() => props.results[tab.value])
 
-const iconFor = (r) => ({
-  rows: ['mdi-table', 'primary'],
-  command: ['mdi-check', 'success'],
-  error: ['mdi-alert-circle', 'error'],
-  skipped: ['mdi-debug-step-over', 'grey'],
-}[r.kind])
-const label = (r) => {
+const iconFor = (r: StatementResult) =>
+  ({
+    rows: ['mdi-table', 'primary'],
+    command: ['mdi-check', 'success'],
+    error: ['mdi-alert-circle', 'error'],
+    skipped: ['mdi-debug-step-over', 'grey'],
+  })[r.kind]
+const label = (r: StatementResult) => {
   const s = r.sql.replace(/\s+/g, ' ')
   return s.length > 28 ? s.slice(0, 28) + '…' : s
 }
 </script>
 
 <style scoped>
-.tabs { border-bottom: 1px solid rgba(var(--v-border-color), var(--v-border-opacity)); }
-.tab-label { font-size: 12px; }
-.notices { max-height: 90px; overflow: auto; padding: 4px 8px; font-size: 12px; border-top: 1px solid rgba(var(--v-border-color), var(--v-border-opacity)); opacity: 0.8; }
+.tabs {
+  border-bottom: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
+}
+.tab-label {
+  font-size: 12px;
+}
+.notices {
+  max-height: 90px;
+  overflow: auto;
+  padding: 4px 8px;
+  font-size: 12px;
+  border-top: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
+  opacity: 0.8;
+}
 </style>

@@ -1,0 +1,192 @@
+import express from 'express'
+import type { Request, Response } from 'express'
+import fs from 'node:fs'
+import path from 'node:path'
+import crypto from 'node:crypto'
+import { PostgresDriver } from './drivers/postgres.ts'
+import { MariadbDriver } from './drivers/mariadb.ts'
+import type { Driver, DriverConfig } from './drivers/types.ts'
+import { splitSql } from '../shared/splitSql.ts'
+import { toMarkdown } from './describe.ts'
+import type { ConnectionConfig, ConnectionForm, PublicConnection } from '../shared/types.ts'
+
+export class HttpError extends Error {
+  status: number
+  constructor(message: string, status: number) {
+    super(message)
+    this.status = status
+  }
+}
+
+export const defaultDriver = (cfg: DriverConfig): Driver => (cfg.type === 'mariadb' ? new MariadbDriver(cfg) : new PostgresDriver(cfg))
+
+export const publicConn = ({ password, ...c }: ConnectionConfig): PublicConnection => ({ ...c, hasPassword: !!password })
+
+// Query string parameters are strings (or arrays / objects when repeated): keep only plain strings.
+const str = (v: unknown) => (typeof v === 'string' && v !== '' ? v : undefined)
+
+// the stored password, unless the form brings a new one
+const passwordOf = (body: ConnectionForm, prev?: ConnectionConfig) => body.password || (body.keepPassword ? prev?.password : '') || ''
+
+// JSON route: the handler's value, or { error } (400 unless an HttpError says otherwise)
+const h = (fn: (req: Request, res: Response) => unknown) => async (req: Request, res: Response) => {
+  try {
+    res.json(await fn(req, res))
+  } catch (e) {
+    res.status(e instanceof HttpError ? e.status : 400).json({ error: e instanceof Error ? e.message : String(e) })
+  }
+}
+
+const connId = (req: Request) => String(req.params.id)
+
+export interface AppOptions {
+  // saved connections (plain JSON file, passwords included: keep this tool local)
+  dataFile: string
+  makeDriver?: (cfg: DriverConfig) => Driver
+}
+
+export function createApp({ dataFile, makeDriver = defaultDriver }: AppOptions) {
+  const load = (): ConnectionConfig[] => {
+    try {
+      return JSON.parse(fs.readFileSync(dataFile, 'utf8'))
+    } catch {
+      return []
+    }
+  }
+  const save = (list: ConnectionConfig[]) => {
+    fs.mkdirSync(path.dirname(dataFile), { recursive: true })
+    fs.writeFileSync(dataFile, JSON.stringify(list, null, 2), { mode: 0o600 })
+  }
+  let connections = load()
+
+  // ---- live drivers, one per saved connection ----
+  const drivers = new Map<string, Driver>()
+  function driver(id: string) {
+    let d = drivers.get(id)
+    if (!d) {
+      const cfg = connections.find((c) => c.id === id)
+      if (!cfg) throw new HttpError('Unknown connection', 404)
+      d = makeDriver(cfg)
+      drivers.set(id, d)
+    }
+    return d
+  }
+  async function dropDriver(id: string) {
+    const d = drivers.get(id)
+    drivers.delete(id)
+    await d?.close()
+  }
+
+  const app = express()
+  app.use(express.json({ limit: '20mb' }))
+
+  app.get(
+    '/api/connections',
+    h(() => connections.map(publicConn)),
+  )
+
+  app.post(
+    '/api/connections',
+    h(async (req) => {
+      const body: ConnectionForm = req.body
+      const prev = connections.find((c) => c.id === body.id)
+      const cfg: ConnectionConfig = {
+        id: prev?.id || crypto.randomUUID(),
+        name: body.name || `${body.user || ''}@${body.host || 'localhost'}`,
+        type: body.type === 'mariadb' ? 'mariadb' : 'postgres',
+        host: body.host || 'localhost',
+        port: Number(body.port) || undefined,
+        user: body.user || '',
+        password: passwordOf(body, prev),
+        database: body.database || '',
+        ssl: !!body.ssl,
+      }
+      connections = prev ? connections.map((c) => (c.id === cfg.id ? cfg : c)) : [...connections, cfg]
+      save(connections)
+      await dropDriver(cfg.id)
+      return publicConn(cfg)
+    }),
+  )
+
+  app.delete(
+    '/api/connections/:id',
+    h(async (req) => {
+      const id = String(req.params.id)
+      await dropDriver(id)
+      connections = connections.filter((c) => c.id !== id)
+      save(connections)
+      return { ok: true }
+    }),
+  )
+
+  app.post(
+    '/api/connections/test',
+    h(async (req) => {
+      const body: ConnectionForm = req.body
+      const prev = connections.find((c) => c.id === body.id)
+      const d = makeDriver({
+        type: body.type === 'mariadb' ? 'mariadb' : 'postgres',
+        host: body.host || 'localhost',
+        port: Number(body.port) || undefined,
+        user: body.user,
+        password: passwordOf(body, prev),
+        database: body.database,
+        ssl: !!body.ssl,
+      })
+      try {
+        return { version: await d.test() }
+      } finally {
+        await d.close()
+      }
+    }),
+  )
+
+  app.get(
+    '/api/c/:id/info',
+    h(async (req) => {
+      const d = driver(connId(req))
+      return { hasSchemas: d.hasSchemas, databases: await d.databases() }
+    }),
+  )
+  app.get(
+    '/api/c/:id/schemas',
+    h((req) => driver(connId(req)).schemas(str(req.query.db))),
+  )
+  app.get(
+    '/api/c/:id/tables',
+    h((req) => driver(connId(req)).tables(str(req.query.db), str(req.query.schema))),
+  )
+  app.get(
+    '/api/c/:id/columns',
+    h((req) => driver(connId(req)).columns(str(req.query.db), str(req.query.schema), str(req.query.table) ?? '')),
+  )
+  app.get(
+    '/api/c/:id/completion',
+    h((req) => driver(connId(req)).completion(str(req.query.db), str(req.query.schema))),
+  )
+  app.get(
+    '/api/c/:id/describe',
+    h(async (req) => ({
+      markdown: toMarkdown(await driver(connId(req)).describe(str(req.query.db), str(req.query.schema))),
+    })),
+  )
+
+  app.post(
+    '/api/c/:id/query',
+    h(async (req) => {
+      const d = driver(connId(req))
+      const { db, schema, sql } = req.body as { db?: string; schema?: string; sql?: string }
+      const maxRows = Math.min(Math.max(Number(req.body.maxRows) || 500, 1), 100000)
+      const statements = splitSql(sql || '', d.hasSchemas ? 'postgres' : 'mariadb')
+      if (!statements.length) return { results: [] }
+      return { results: await d.run(db || undefined, schema || undefined, statements, maxRows) }
+    }),
+  )
+
+  app.post(
+    '/api/c/:id/cancel',
+    h(async (req) => ({ cancelled: await driver(connId(req)).cancel(req.body.db || undefined) })),
+  )
+
+  return app
+}

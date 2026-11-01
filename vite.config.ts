@@ -1,4 +1,5 @@
 import { defineConfig } from 'vite'
+import type { Plugin } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import vuetify from 'vite-plugin-vuetify'
 import os from 'node:os'
@@ -14,7 +15,7 @@ const proxy = { '/api': `http://127.0.0.1:${process.env.PORT || 3070}` }
 const tailscaleIp = os.networkInterfaces().tailscale0?.find((a) => a.family === 'IPv4')?.address
 
 // Vite binds a single address: keep http://localhost:<port> working by forwarding it to the Tailscale one.
-const localhostForward = () => ({
+const localhostForward = (): Plugin => ({
   name: 'localhost-forward',
   apply: 'serve',
   configureServer(server) {
