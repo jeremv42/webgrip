@@ -53,7 +53,7 @@ export async function copyText(text: string) {
   ta.select()
   const ok = document.execCommand('copy')
   ta.remove()
-  if (!ok) throw new Error('Copie impossible')
+  if (!ok) throw new Error('Copy failed')
 }
 
 export const store = {

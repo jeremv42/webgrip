@@ -241,7 +241,7 @@ describe('authentication', () => {
     for (const c of [undefined, `webgrip_session=9999999999.forged`, 'webgrip_session=']) {
       const res = await fetch(base + '/connections', { headers: c ? { cookie: c } : {} })
       expect(res.status).toBe(401)
-      expect(await res.json()).toEqual({ error: 'Non authentifié' })
+      expect(await res.json()).toEqual({ error: 'Not authenticated' })
     }
     expect((await fetch(base + '/c/x/query', { method: 'POST' })).status).toBe(401)
   })

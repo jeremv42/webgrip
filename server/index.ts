@@ -15,9 +15,7 @@ const password = process.env.WEBGRIP_PASSWORD || ''
 const secret = process.env.WEBGRIP_SECRET || ''
 
 if (!password || secret.length < 16) {
-  console.error(
-    'WEBGRIP_PASSWORD et WEBGRIP_SECRET (16 caractères au moins) doivent être définis, par exemple dans .env (voir .env.example)',
-  )
+  console.error('WEBGRIP_PASSWORD and WEBGRIP_SECRET (at least 16 characters) must be set, e.g. in .env (see .env.example)')
   process.exit(1)
 }
 

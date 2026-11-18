@@ -10,7 +10,7 @@
           :items="connections"
           item-title="name"
           item-value="id"
-          placeholder="Connexion"
+          placeholder="Connection"
           style="max-width: 240px"
           :prepend-inner-icon="conn?.type === 'mariadb' ? 'mdi-dolphin' : 'mdi-elephant'"
         >
@@ -18,16 +18,22 @@
             <v-list-item v-bind="p" :subtitle="`${item.type} · ${item.user}@${item.host}`" />
           </template>
         </v-select>
-        <v-btn icon="mdi-pencil" size="small" variant="text" title="Modifier" :disabled="!conn" @click="openDialog(conn)" />
-        <v-btn icon="mdi-plus" size="small" variant="text" title="Nouvelle connexion" @click="openDialog(null)" />
+        <v-btn icon="mdi-pencil" size="small" variant="text" title="Edit" :disabled="!conn" @click="openDialog(conn)" />
+        <v-btn icon="mdi-plus" size="small" variant="text" title="New connection" @click="openDialog(null)" />
 
         <template v-if="info">
-          <v-select v-model="db" :items="info.databases" placeholder="Base" style="max-width: 200px" prepend-inner-icon="mdi-database" />
+          <v-select
+            v-model="db"
+            :items="info.databases"
+            placeholder="Database"
+            style="max-width: 200px"
+            prepend-inner-icon="mdi-database"
+          />
           <v-select
             v-if="info.hasSchemas"
             v-model="schema"
             :items="schemas"
-            placeholder="Schéma"
+            placeholder="Schema"
             style="max-width: 180px"
             prepend-inner-icon="mdi-folder-table-outline"
           />
@@ -39,7 +45,7 @@
           v-model="maxRows"
           :items="[100, 500, 1000, 5000, 20000]"
           style="max-width: 120px"
-          title="Lignes max"
+          title="Max rows"
           prepend-inner-icon="mdi-format-list-numbered"
         />
         <v-btn
@@ -47,30 +53,30 @@
           variant="flat"
           prepend-icon="mdi-play"
           :disabled="!info || running"
-          title="Ctrl+Entrée"
+          title="Ctrl+Enter"
           @click="editor?.runCurrent()"
-          >Exécuter</v-btn
+          >Run</v-btn
         >
         <v-btn
           variant="tonal"
           prepend-icon="mdi-play-box-multiple"
           :disabled="!info || running"
-          title="Ctrl+Maj+Entrée"
+          title="Ctrl+Shift+Enter"
           @click="editor?.runAll()"
-          >Tout</v-btn
+          >All</v-btn
         >
-        <v-btn v-if="running" color="error" variant="tonal" prepend-icon="mdi-stop" @click="cancel">Annuler</v-btn>
+        <v-btn v-if="running" color="error" variant="tonal" prepend-icon="mdi-stop" @click="cancel">Cancel</v-btn>
         <v-btn
           icon="mdi-content-copy"
           size="small"
           variant="text"
-          title="Copier la structure de la base (pour un chat)"
+          title="Copy the database structure (for a chat)"
           :disabled="!info || copying"
           :loading="copying"
           @click="copySchema"
         />
         <v-btn :icon="dark ? 'mdi-weather-sunny' : 'mdi-weather-night'" variant="text" size="small" @click="toggleTheme" />
-        <v-btn icon="mdi-logout" variant="text" size="small" title="Se déconnecter" @click="logout" />
+        <v-btn icon="mdi-logout" variant="text" size="small" title="Log out" @click="logout" />
       </div>
     </v-app-bar>
 
@@ -90,11 +96,11 @@
           ><div class="text-error mb-2">{{ infoError }}</div></template
         >
         <template v-else-if="!connections.length"
-          >Aucune connexion.<br /><v-btn class="mt-3" color="primary" prepend-icon="mdi-plus" @click="openDialog(null)"
-            >Ajouter</v-btn
+          >No connection yet.<br /><v-btn class="mt-3" color="primary" prepend-icon="mdi-plus" @click="openDialog(null)"
+            >Add</v-btn
           ></template
         >
-        <template v-else-if="connId">Connexion…</template>
+        <template v-else-if="connId">Connecting…</template>
       </div>
     </v-navigation-drawer>
 
@@ -169,7 +175,7 @@ async function copySchema() {
   try {
     const { markdown } = await api.get<{ markdown: string }>(`/c/${connId.value}/describe`, { db: db.value, schema: schema.value })
     await copyText(markdown)
-    flash('Structure copiée dans le presse-papiers')
+    flash('Structure copied to the clipboard')
   } catch (e) {
     notify(e)
   } finally {

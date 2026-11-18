@@ -3,13 +3,13 @@
     <div class="d-flex align-center pa-2 ga-1">
       <v-text-field
         v-model="filter"
-        placeholder="Filtrer les tables"
+        placeholder="Filter tables"
         prepend-inner-icon="mdi-magnify"
         clearable
         hide-details
         density="compact"
       />
-      <v-btn icon="mdi-refresh" variant="text" size="small" title="Rafraîchir" @click="reload" />
+      <v-btn icon="mdi-refresh" variant="text" size="small" title="Refresh" @click="reload" />
     </div>
     <div class="tree mono flex-grow-1">
       <div
@@ -109,7 +109,7 @@ async function loadChildren(n: TreeNode): Promise<TreeNode[]> {
   }
   if (n.kind === 'database' || n.kind === 'schema') {
     const list = await api.get<TableInfo[]>(`/c/${id}/tables`, { db: n.db, schema: n.schema })
-    if (!list.length) return [node('empty', '(aucune table)', { key: n.key + '/empty', db: n.db, leaf: true, icon: '' })]
+    if (!list.length) return [node('empty', '(no tables)', { key: n.key + '/empty', db: n.db, leaf: true, icon: '' })]
     return list.map((t) => node('table', t.name, { key: `${n.key}/t:${t.name}`, db: n.db, schema: n.schema, table: t.name, type: t.type }))
   }
   if (n.kind === 'table') {

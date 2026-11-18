@@ -19,7 +19,7 @@ describe('vault', () => {
     expect(() => unseal(parsed, 'another-secret!!')).toThrow(/WEBGRIP_SECRET/)
     const data = Buffer.from(parsed.data, 'base64')
     data[0] ^= 1
-    expect(() => unseal({ ...parsed, data: data.toString('base64') }, 'some-long-secret!')).toThrow(/altéré/)
+    expect(() => unseal({ ...parsed, data: data.toString('base64') }, 'some-long-secret!')).toThrow(/altered/)
   })
 
   it('does not take a plain connection list for an encrypted file', () => {

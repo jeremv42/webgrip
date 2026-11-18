@@ -22,9 +22,9 @@ describe('api', () => {
     onUnauthorized(handler)
     vi.stubGlobal(
       'fetch',
-      vi.fn(async () => new Response(JSON.stringify({ error: 'Non authentifié' }), { status: 401 })),
+      vi.fn(async () => new Response(JSON.stringify({ error: 'Not authenticated' }), { status: 401 })),
     )
-    await expect(api.get('/connections')).rejects.toThrow('Non authentifié')
+    await expect(api.get('/connections')).rejects.toThrow('Not authenticated')
     expect(handler).toHaveBeenCalledOnce()
     vi.stubGlobal(
       'fetch',
@@ -105,6 +105,6 @@ describe('copyText', () => {
   it('throws when nothing can copy', async () => {
     vi.stubGlobal('navigator', {})
     document.execCommand = () => false
-    await expect(copyText('x')).rejects.toThrow('Copie impossible')
+    await expect(copyText('x')).rejects.toThrow('Copy failed')
   })
 })

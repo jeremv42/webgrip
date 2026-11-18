@@ -6,7 +6,7 @@
           <v-text-field
             v-model="password"
             type="password"
-            label="Mot de passe"
+            label="Password"
             autocomplete="current-password"
             autofocus
             :error-messages="error"
@@ -15,7 +15,7 @@
         </v-card-text>
         <v-card-actions>
           <v-spacer />
-          <v-btn type="submit" color="primary" variant="flat" :loading="busy" :disabled="!password">Se connecter</v-btn>
+          <v-btn type="submit" color="primary" variant="flat" :loading="busy" :disabled="!password">Log in</v-btn>
         </v-card-actions>
       </v-form>
     </v-card>

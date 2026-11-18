@@ -30,13 +30,13 @@ const rows: StatementResult = {
 
 describe('ResultPanel', () => {
   it('shows the shortcuts while there is no result', () => {
-    expect(mountPanel([]).text()).toContain('Ctrl+Entrée')
+    expect(mountPanel([]).text()).toContain('Ctrl+Enter')
   })
 
   it('renders rows in a grid, NULL apart, and sorts numbers by value', async () => {
     const w = mountPanel([rows])
-    expect(w.text()).toContain('2 lignes')
-    expect(w.text()).toContain('il y en a plus')
+    expect(w.text()).toContain('2 rows')
+    expect(w.text()).toContain('there are more')
     const cells = () => w.findAll('tbody tr').map((tr) => tr.findAll('td').map((td) => td.text()))
     expect(cells()).toEqual([
       ['1', '10', 'Zoé'],

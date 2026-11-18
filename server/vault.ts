@@ -42,6 +42,6 @@ export function unseal(sealed: Sealed, secret: string): string {
   try {
     return Buffer.concat([decipher.update(Buffer.from(sealed.data, 'base64')), decipher.final()]).toString('utf8')
   } catch {
-    throw new Error('Impossible de déchiffrer le fichier des connexions : WEBGRIP_SECRET incorrect ou fichier altéré')
+    throw new Error('Cannot decrypt the connections file: wrong WEBGRIP_SECRET or altered file')
   }
 }

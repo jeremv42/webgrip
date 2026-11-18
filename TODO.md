@@ -26,6 +26,7 @@
 
 - [ ] Indexes, foreign keys, triggers, sequences and functions in the tree
 - [ ] Show a table's DDL (`CREATE TABLE …`) from the tree
+- [ ] Right-click menu on the selected databases in the tree, with at least: drop (confirmation modal), export (SQL file written by streaming)
 - [ ] Automatically refresh the tree and the completion cache after DDL (`CREATE`, `ALTER`, `DROP`…)
 
 ## Engines and connections
@@ -37,5 +38,5 @@
 ## Engineering and maintenance
 
 - [ ] Integration tests against real servers (PostgreSQL and MariaDB in Docker containers; SQLite as a file)
-- [ ] Translate everything into English (UI, docs, error messages)
+- [x] Translate everything into English (UI, docs, error messages)
 - [ ] Track `dt-sql-parser` and `monaco-sql-languages` upstream: remove `patches/` and the Monaco aliases in `vite.config.ts` once fixed there

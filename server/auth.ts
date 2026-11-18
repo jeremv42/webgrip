@@ -46,13 +46,13 @@ export function createAuth({ password, secret, now = () => Date.now() }: { passw
     async login(req: Request, res: Response) {
       failures = failures.filter((t) => t > now() - 60_000)
       if (failures.length >= MAX_FAILURES) {
-        res.status(429).json({ error: 'Trop de tentatives, réessayez dans une minute' })
+        res.status(429).json({ error: 'Too many attempts, try again in a minute' })
         return
       }
       if (!check(req.body?.password)) {
         failures.push(now())
         await new Promise((resolve) => setTimeout(resolve, 500)) // slows down guessing
-        res.status(401).json({ error: 'Mot de passe incorrect' })
+        res.status(401).json({ error: 'Wrong password' })
         return
       }
       res.setHeader('Set-Cookie', cookie(token(), MAX_AGE))
@@ -67,7 +67,7 @@ export function createAuth({ password, secret, now = () => Date.now() }: { passw
     // every /api route but the login one
     guard(req: Request, res: Response, next: NextFunction) {
       if (valid(cookieValue(req.headers.cookie, COOKIE))) next()
-      else res.status(401).json({ error: 'Non authentifié' })
+      else res.status(401).json({ error: 'Not authenticated' })
     },
   }
 }

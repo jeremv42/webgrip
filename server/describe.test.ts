@@ -44,14 +44,14 @@ describe('toMarkdown', () => {
   it('renders the header, a table per relation, keys and indexes', () => {
     const md = toMarkdown(d)
     expect(md).toContain('# shop — PostgreSQL 17.2')
-    expect(md).toContain('- Schéma : `public`')
-    expect(md).toContain('- Schémas de la base : `public`, `sales`')
-    expect(md).toContain('## Table `orders` (≈ 1200 lignes)\n\nOne row per order')
+    expect(md).toContain('- Schema: `public`')
+    expect(md).toContain('- Schemas of the database: `public`, `sales`')
+    expect(md).toContain('## Table `orders` (≈ 1200 rows)\n\nOne row per order')
     expect(md).toContain("| id | integer | NOT NULL | nextval('orders_id_seq'::regclass) | PK |")
     expect(md).toContain('| note | text | NULL |  |  |')
-    expect(md).toContain('- orders_customer_fk : FOREIGN KEY (customer_id) REFERENCES customers(id)')
-    expect(md).toContain('- orders_date_idx : USING btree (created_at)')
-    expect(md).toContain('## Vue `v_orders`\n')
+    expect(md).toContain('- orders_customer_fk: FOREIGN KEY (customer_id) REFERENCES customers(id)')
+    expect(md).toContain('- orders_date_idx: USING btree (created_at)')
+    expect(md).toContain('## View `v_orders`\n')
     expect(md.endsWith('\n')).toBe(true)
   })
 
@@ -61,6 +61,6 @@ describe('toMarkdown', () => {
 
   it('omits the schema lines for MariaDB', () => {
     const md = toMarkdown({ engine: 'MariaDB', version: '11.4', database: 'shop', tables: [] })
-    expect(md).not.toContain('Schéma')
+    expect(md).not.toContain('Schema')
   })
 })

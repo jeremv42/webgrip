@@ -14,25 +14,25 @@
         :key="t.id"
         :value="t.id"
         class="text-none tab"
-        title="Double-clic : renommer · clic milieu : fermer"
+        title="Double-click: rename · middle click: close"
         @dblclick="startRename(t)"
         @mousedown.middle.prevent="close(t)"
       >
         <v-icon size="14" class="mr-1">mdi-console-line</v-icon>
         {{ t.name }}
-        <v-icon size="14" class="ml-2 close" title="Fermer" @click.stop="close(t)">mdi-close</v-icon>
+        <v-icon size="14" class="ml-2 close" title="Close" @click.stop="close(t)">mdi-close</v-icon>
       </v-tab>
     </v-tabs>
-    <v-btn icon="mdi-plus" size="x-small" variant="text" class="ml-1" title="Nouvel onglet" @click="emit('add')" />
+    <v-btn icon="mdi-plus" size="x-small" variant="text" class="ml-1" title="New tab" @click="emit('add')" />
 
     <v-dialog v-model="renaming" max-width="340">
-      <v-card title="Renommer l'onglet">
+      <v-card title="Rename tab">
         <v-form @submit.prevent="rename">
-          <v-card-text><v-text-field v-model="newName" label="Nom" autofocus /></v-card-text>
+          <v-card-text><v-text-field v-model="newName" label="Name" autofocus /></v-card-text>
           <v-card-actions>
             <v-spacer />
-            <v-btn @click="renaming = false">Annuler</v-btn>
-            <v-btn type="submit" color="primary" variant="flat" :disabled="!newName.trim()">Renommer</v-btn>
+            <v-btn @click="renaming = false">Cancel</v-btn>
+            <v-btn type="submit" color="primary" variant="flat" :disabled="!newName.trim()">Rename</v-btn>
           </v-card-actions>
         </v-form>
       </v-card>
@@ -55,7 +55,7 @@ function select(id: unknown) {
 
 // closing loses the tab's text: ask first when there is some
 function close(t: EditorTab) {
-  if (t.sql.trim() && !confirm(`Fermer « ${t.name} » ? Son contenu sera perdu.`)) return
+  if (t.sql.trim() && !confirm(`Close "${t.name}"? Its content will be lost.`)) return
   emit('close', t.id)
 }
 

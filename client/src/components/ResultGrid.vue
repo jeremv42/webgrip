@@ -2,14 +2,14 @@
   <div class="d-flex flex-column h-100">
     <div class="d-flex align-center px-2 py-1 ga-3 text-medium-emphasis bar">
       <span>
-        {{ result.rows.length }} ligne{{ result.rows.length > 1 ? 's' : '' }}
+        {{ result.rows.length }} row{{ result.rows.length === 1 ? '' : 's' }}
         <span v-if="result.truncated" class="text-warning">
-          (limité à {{ result.rows.length }}{{ result.total ? ` sur ${result.total}` : ', il y en a plus' }})
+          (limited to {{ result.rows.length }}{{ result.total ? ` of ${result.total}` : ', there are more' }})
         </span>
       </span>
       <span>{{ fmtMs(result.ms) }}</span>
       <v-spacer />
-      <v-btn size="small" variant="text" prepend-icon="mdi-content-copy" @click="copy">{{ copied ? 'Copié' : 'Copier (TSV)' }}</v-btn>
+      <v-btn size="small" variant="text" prepend-icon="mdi-content-copy" @click="copy">{{ copied ? 'Copied' : 'Copy (TSV)' }}</v-btn>
     </div>
     <div class="grid-wrap mono">
       <table class="grid">
@@ -39,8 +39,8 @@
           <pre class="mono cell-full">{{ cell.value }}</pre>
         </v-card-text>
         <v-card-actions>
-          <v-btn @click="copyText(cell.value)">Copier</v-btn>
-          <v-btn color="primary" @click="cell.open = false">Fermer</v-btn>
+          <v-btn @click="copyText(cell.value)">Copy</v-btn>
+          <v-btn color="primary" @click="cell.open = false">Close</v-btn>
         </v-card-actions>
       </v-card>
     </v-dialog>

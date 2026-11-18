@@ -1,48 +1,44 @@
 # WebGrip
 
-Mini-DataGrip web en TypeScript : Node (Express, `pg`, `mysql2`) + Vue 3 / Vuetify, sans store.
+A mini web DataGrip in TypeScript: Node (Express, `pg`, `mysql2`) + Vue 3 / Vuetify, no store.
 
-- Accès protégé par un mot de passe (`WEBGRIP_PASSWORD`), session gardée 30 jours par un cookie
-- Connexions PostgreSQL et MariaDB/MySQL, enregistrées chiffrées (AES-256-GCM, clé `WEBGRIP_SECRET`) dans `data/connections.json`
-- Arbre bases → schémas (Postgres) → tables/vues → colonnes, filtre, double-clic sur une table = `SELECT * … LIMIT n`
-- Éditeur Monaco (celui de VS Code) avec un vrai parseur SQL : autocomplétion selon le contexte (tables de tous les schémas, colonnes typées, alias, sous-requêtes, CTE, mots-clés, fonctions), erreurs de syntaxe soulignées, formatage (Ctrl+Alt+F)
-  - **Ctrl+Entrée** : sélection, sinon requête sous le curseur
-  - **Ctrl+Maj+Entrée** : tout le script
-- Plusieurs onglets d'éditeur par connexion (« Console N ») : double-clic pour renommer, clic milieu ou × pour fermer ; chacun garde son texte, son historique d'annulation, sa position et ses résultats
-- Un onglet de résultat par requête ; arrêt à la première erreur (le curseur est placé sur l'erreur si Postgres donne la position)
-- Grille : tri par colonne, NULL distincts, double-clic sur une cellule = valeur complète (JSON indenté), copie TSV
-- Une session dédiée par base pour l'éditeur (les `BEGIN`/`SET`/tables temporaires persistent entre exécutions) ; bouton Annuler (`pg_cancel_backend` / `KILL QUERY`)
-- Lignes limitées (100 à 20 000) : les lignes en trop ne sont pas chargées (curseur côté Postgres, streaming côté MariaDB)
+- Access protected by a password (`WEBGRIP_PASSWORD`), session kept for 30 days by a cookie
+- PostgreSQL and MariaDB/MySQL connections, saved encrypted (AES-256-GCM, key `WEBGRIP_SECRET`) in `data/connections.json`
+- Tree databases → schemas (Postgres) → tables/views → columns, filter, double-click on a table = `SELECT * … LIMIT n`
+- Monaco editor (VS Code's) with a real SQL parser: context-aware completion (tables of every schema, typed columns, aliases, subqueries, CTEs, keywords, functions), syntax errors underlined, formatting (Ctrl+Alt+F)
+  - **Ctrl+Enter**: selection, else the statement under the cursor
+  - **Ctrl+Shift+Enter**: the whole script
+- Several editor tabs per connection ("Console N"): double-click to rename, middle click or × to close; each keeps its text, undo history, position and results
+- One result tab per statement; stops at the first error (the cursor is placed on the error when Postgres gives its position)
+- Grid: sort by column, distinct NULLs, double-click on a cell = full value (indented JSON), TSV copy
+- One dedicated session per database for the editor (`BEGIN`/`SET`/temporary tables persist between runs); Cancel button (`pg_cancel_backend` / `KILL QUERY`)
+- Row limit (100 to 20,000): extra rows are never loaded (cursor on Postgres, streaming on MariaDB)
 
-## Lancer
+## Run
 
 ```bash
-cp .env.example .env             # puis y mettre WEBGRIP_PASSWORD et WEBGRIP_SECRET (openssl rand -base64 32)
+cp .env.example .env             # then set WEBGRIP_PASSWORD and WEBGRIP_SECRET (openssl rand -base64 32)
 npm install
-npm run dev                      # Vite + API en watch, sur Tailscale et localhost (voir ci-dessous)
-npm run build && npm start       # http://localhost:5180 (vite preview du build)
+npm run dev                      # Vite + API in watch mode
+npm run build && npm start       # vite preview of the build, port 5180
 ```
 
-Node ≥ 23.6 : l'API (`server/*.ts`) est exécutée directement, sans étape de compilation (type stripping).
+Node ≥ 23.6: the API (`server/*.ts`) runs as is, with no build step (type stripping).
 
-## Vérifier
+## Check
 
 ```bash
 npm run typecheck                # vue-tsc (SPA) + tsc (API)
 npm run lint                     # oxlint
-npm run format                   # oxfmt (format:check pour vérifier seulement)
-npm test                         # Vitest (test:watch en continu)
-npm run check                    # tout ce qui précède
+npm run format                   # oxfmt (format:check to only check)
+npm test                         # Vitest (test:watch to keep running)
+npm run check                    # all of the above
 ```
 
-Tout passe par le port de Vite (5180) : il sert le front et proxifie `/api` vers le backend,
-qui n'écoute que sur `127.0.0.1:3070` (jamais exposé).
+Everything goes through Vite's port (5180): it serves the front end and proxies `/api` to the backend,
+which only listens on `127.0.0.1:3070` (never exposed).
 
-En dev, Vite écoute sur l'IP Tailscale (interface `tailscale0`)
-et reste joignable sur http://localhost:5180 (redirection locale) ; aucune autre interface n'est ouverte.
-Sans Tailscale, il retombe sur localhost seul. `npm start` (preview) reste sur localhost.
-
-Variables (environnement ou `.env`, ignoré par git) : `WEBGRIP_PASSWORD` (mot de passe d'accès), `WEBGRIP_SECRET` (clé de
-chiffrement des connexions et des cookies, 16 caractères au moins : la perdre, c'est perdre les connexions enregistrées),
-`WEB_PORT` (port de Vite, 5180), `PORT` (port interne de l'API, 3070), `WEBGRIP_DATA` (chemin du fichier de connexions).
-Un ancien fichier de connexions en clair est chiffré au premier démarrage. Changer `WEBGRIP_PASSWORD` déconnecte toutes les sessions.
+Variables (environment or `.env`, ignored by git): `WEBGRIP_PASSWORD` (access password), `WEBGRIP_SECRET` (encryption key
+of the connections and the cookies, at least 16 characters: losing it means losing the saved connections),
+`WEB_PORT` (Vite's port, 5180), `PORT` (internal API port, 3070), `WEBGRIP_DATA` (path of the connections file).
+An old plain-text connections file is encrypted at the first start. Changing `WEBGRIP_PASSWORD` logs every session out.

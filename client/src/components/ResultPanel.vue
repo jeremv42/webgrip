@@ -2,7 +2,7 @@
   <div class="d-flex flex-column h-100">
     <v-progress-linear :active="running" indeterminate color="primary" height="2" />
     <div v-if="!results.length" class="d-flex align-center justify-center flex-grow-1 text-medium-emphasis">
-      {{ running ? 'Exécution…' : 'Ctrl+Entrée : requête sous le curseur (ou sélection) · Ctrl+Maj+Entrée : tout le script' }}
+      {{ running ? 'Running…' : 'Ctrl+Enter: statement under the cursor (or selection) · Ctrl+Shift+Enter: whole script' }}
     </div>
     <template v-else>
       <v-tabs v-model="tab" density="compact" show-arrows class="flex-grow-0 flex-shrink-0 tabs">
@@ -20,11 +20,11 @@
             <div v-if="current.error.hint">HINT: {{ current.error.hint }}</div>
             <div v-if="current.error.code" class="mt-2 text-medium-emphasis">code {{ current.error.code }}</div>
           </v-alert>
-          <div v-else-if="current.kind === 'skipped'" class="text-medium-emphasis">Non exécutée : une requête précédente a échoué.</div>
+          <div v-else-if="current.kind === 'skipped'" class="text-medium-emphasis">Not run: a previous statement failed.</div>
           <div v-else class="mono">
             <v-icon color="success" class="mr-1">mdi-check-circle</v-icon>
             {{ current.command }}
-            <template v-if="current.affected != null"> — {{ current.affected }} ligne(s) affectée(s)</template>
+            <template v-if="current.affected != null"> — {{ current.affected }} row(s) affected</template>
             <span v-if="current.info" class="text-medium-emphasis"> ({{ current.info }})</span>
           </div>
           <pre class="mono mt-3 text-medium-emphasis" style="white-space: pre-wrap">{{ current.sql }}</pre>

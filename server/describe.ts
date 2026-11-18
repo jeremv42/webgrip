@@ -12,27 +12,27 @@ export function groupBy<T, K>(rows: T[], key: (row: T) => K): Map<K, T[]> {
   return m
 }
 
-const KIND: Record<TableKind, string> = { table: 'Table', view: 'Vue', matview: 'Vue matérialisée', foreign: 'Table étrangère' }
+const KIND: Record<TableKind, string> = { table: 'Table', view: 'View', matview: 'Materialized view', foreign: 'Foreign table' }
 const cell = (v: unknown) =>
   String(v ?? '')
     .replace(/\|/g, '\\|')
     .replace(/\s*\n\s*/g, ' ')
 
 export function toMarkdown(d: SchemaDescription): string {
-  const lines = [`# ${d.database} — ${d.version}`, '', `- Moteur : ${d.engine}`, `- Base : \`${d.database}\``]
-  if (d.schema) lines.push(`- Schéma : \`${d.schema}\``)
-  if (d.schemas?.length) lines.push(`- Schémas de la base : ${d.schemas.map((s) => `\`${s}\``).join(', ')}`)
-  lines.push('', 'Structure seule, sans données. Les nombres de lignes sont des estimations.')
+  const lines = [`# ${d.database} — ${d.version}`, '', `- Engine: ${d.engine}`, `- Database: \`${d.database}\``]
+  if (d.schema) lines.push(`- Schema: \`${d.schema}\``)
+  if (d.schemas?.length) lines.push(`- Schemas of the database: ${d.schemas.map((s) => `\`${s}\``).join(', ')}`)
+  lines.push('', 'Structure only, no data. Row counts are estimates.')
 
   for (const t of d.tables) {
-    lines.push('', `## ${KIND[t.kind] ?? t.kind} \`${t.name}\`${t.rows != null ? ` (≈ ${t.rows} lignes)` : ''}`)
+    lines.push('', `## ${KIND[t.kind] ?? t.kind} \`${t.name}\`${t.rows != null ? ` (≈ ${t.rows} rows)` : ''}`)
     if (t.comment) lines.push('', t.comment)
-    lines.push('', '| Colonne | Type | Nullable | Défaut | Clé |', '|---|---|---|---|---|')
+    lines.push('', '| Column | Type | Nullable | Default | Key |', '|---|---|---|---|---|')
     for (const c of t.columns) {
       lines.push(`| ${cell(c.name)} | ${cell(c.type)} | ${c.notnull ? 'NOT NULL' : 'NULL'} | ${cell(c.default)} | ${c.pk ? 'PK' : ''} |`)
     }
-    if (t.foreignKeys.length) lines.push('', '**Clés étrangères**', ...t.foreignKeys.map((f) => `- ${f.name} : ${f.def}`))
-    if (t.indexes.length) lines.push('', '**Index**', ...t.indexes.map((i) => `- ${i.name}${i.unique ? ' (unique)' : ''} : ${i.def}`))
+    if (t.foreignKeys.length) lines.push('', '**Foreign keys**', ...t.foreignKeys.map((f) => `- ${f.name}: ${f.def}`))
+    if (t.indexes.length) lines.push('', '**Indexes**', ...t.indexes.map((i) => `- ${i.name}${i.unique ? ' (unique)' : ''}: ${i.def}`))
   }
   return lines.join('\n') + '\n'
 }

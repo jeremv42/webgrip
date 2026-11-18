@@ -1,114 +1,114 @@
 # Architecture
 
-WebGrip est un client SQL web minimal (PostgreSQL et MariaDB/MySQL) : une SPA Vue qui parle en JSON à une petite API Node.
-Le code (TypeScript) tient en ~2 700 lignes hors tests, sans base de données propre ni store front-end.
+WebGrip is a minimal web SQL client (PostgreSQL and MariaDB/MySQL): a Vue SPA that talks JSON to a small Node API.
+The code (TypeScript) is about 3,000 lines without tests, with no database of its own and no front-end store.
 
 ## Technologies
 
-| Couche | Techno | Rôle |
+| Layer | Tech | Role |
 |---|---|---|
-| Backend | **Node.js** (ESM, TypeScript exécuté directement), **Express 5** | API REST JSON |
-| | **pg** + **pg-cursor** | Driver PostgreSQL ; le curseur ne lit que `maxRows + 1` lignes |
-| | **mysql2** | Driver MariaDB/MySQL ; les lignes sont lues en flux (streaming), seules les `maxRows` premières sont gardées |
-| Front-end | **Vue 3** (`<script setup>`, Composition API) | SPA, état local aux composants, pas de Pinia ni de router |
-| | **Vuetify 4** (+ `vite-plugin-vuetify` en auto-import, icônes `@mdi/font`) | Composants UI, thème clair/sombre |
-| | **Monaco Editor** (cœur + fonctionnalités, sans les langages intégrés) | Éditeur SQL : raccourcis, menu, recherche… |
-| | **monaco-sql-languages** + **dt-sql-parser** (grammaires ANTLR PostgreSQL / MySQL, dans un web worker) | Coloration, erreurs de syntaxe, autocomplétion selon le contexte, formatage (`sql-formatter`) |
-| | **patch-package** | Correctif local de `dt-sql-parser` (`patches/`), réappliqué à chaque `npm install` |
-| Outillage | **Vite 8** | Serveur de dev, build, `preview` et proxy `/api` |
-| | **concurrently** | Lance l'API et Vite ensemble (`npm run dev` / `npm start`) |
-| | **TypeScript** (`vue-tsc` pour la SPA, `tsc` pour l'API) | Vérification de types seulement (`npm run typecheck`) : Vite compile le front, Node retire les types de l'API |
-| | **oxlint** / **oxfmt** (oxc) | Lint (`npm run lint`) et formatage (`npm run format`) |
-| | **Vitest** (+ `@vue/test-utils`, `happy-dom`) | Tests unitaires et de composants (`npm test`) |
+| Backend | **Node.js** (ESM, TypeScript run directly), **Express 5** | JSON REST API |
+| | **pg** + **pg-cursor** | PostgreSQL driver; the cursor only reads `maxRows + 1` rows |
+| | **mysql2** | MariaDB/MySQL driver; rows are streamed, only the first `maxRows` are kept |
+| Front end | **Vue 3** (`<script setup>`, Composition API) | SPA, state local to components, no Pinia nor router |
+| | **Vuetify 4** (+ `vite-plugin-vuetify` auto-import, `@mdi/font` icons) | UI components, light/dark theme |
+| | **Monaco Editor** (core + features, without the built-in languages) | SQL editor: shortcuts, menu, search… |
+| | **monaco-sql-languages** + **dt-sql-parser** (ANTLR PostgreSQL / MySQL grammars, in a web worker) | Highlighting, syntax errors, context-aware completion, formatting (`sql-formatter`) |
+| | **patch-package** | Local fix of `dt-sql-parser` (`patches/`), reapplied on every `npm install` |
+| Tooling | **Vite 8** | Dev server, build, `preview` and `/api` proxy |
+| | **concurrently** | Runs the API and Vite together (`npm run dev` / `npm start`) |
+| | **TypeScript** (`vue-tsc` for the SPA, `tsc` for the API) | Type checking only (`npm run typecheck`): Vite compiles the front end, Node strips the API's types |
+| | **oxlint** / **oxfmt** (oxc) | Lint (`npm run lint`) and formatting (`npm run format`) |
+| | **Vitest** (+ `@vue/test-utils`, `happy-dom`) | Unit and component tests (`npm test`) |
 
-## Arborescence
+## Layout
 
 ```
 webgrip/
-├── server/                    Backend (API seule, n'écoute que sur 127.0.0.1:3070), exécuté tel quel par Node (type stripping)
-│   ├── index.ts               Point d'entrée : lit .env et l'environnement, puis écoute
-│   ├── app.ts                 createApp() Express : routes, connexions enregistrées, cache des drivers
-│   ├── auth.ts                Mot de passe, cookie de session signé, garde des routes /api
-│   ├── vault.ts               Chiffrement AES-256-GCM du fichier des connexions
-│   ├── describe.ts            Export de structure en Markdown (pour coller dans un chat)
+├── server/                    Backend (API only, listens on 127.0.0.1:3070 only), run as is by Node (type stripping)
+│   ├── index.ts               Entry point: reads .env and the environment, then listens
+│   ├── app.ts                 Express createApp(): routes, saved connections, driver cache
+│   ├── auth.ts                Password, signed session cookie, guard of the /api routes
+│   ├── vault.ts               AES-256-GCM encryption of the connections file
+│   ├── describe.ts            Structure export as Markdown (to paste into a chat)
 │   └── drivers/
-│       ├── types.ts           Interface Driver commune
+│       ├── types.ts           Common Driver interface
 │       ├── postgres.ts        PostgresDriver
 │       └── mariadb.ts         MariadbDriver
 ├── shared/
-│   ├── types.ts               Types échangés en JSON entre l'API et la SPA (connexions, résultats, complétion…)
-│   └── splitSql.ts            Découpage d'un script SQL en requêtes (utilisé par le serveur ET l'éditeur)
-├── client/                    Front-end (racine Vite)
+│   ├── types.ts               Types exchanged as JSON between the API and the SPA (connections, results, completion…)
+│   └── splitSql.ts            Splits a SQL script into statements (used by the server AND the editor)
+├── client/                    Front end (Vite root)
 │   ├── index.html
 │   └── src/
-│       ├── main.ts            Création de l'app Vue + Vuetify (thème, valeurs par défaut des composants)
-│       ├── App.vue            Mise en page et état global : connexion, base/schéma courants, exécution
-│       ├── api.ts             fetch JSON, quoting des identifiants, petit wrapper localStorage
-│       ├── grid.ts            Grille : détection des nombres, tri, export TSV
-│       ├── tabs.ts            Onglets d'éditeur : création, fermeture, sauvegarde par connexion
+│       ├── main.ts            Creates the Vue + Vuetify app (theme, component defaults)
+│       ├── App.vue            Layout and global state: connection, current database/schema, execution
+│       ├── api.ts             JSON fetch, identifier quoting, small localStorage wrapper
+│       ├── grid.ts            Grid: number detection, sorting, TSV export
+│       ├── tabs.ts            Editor tabs: creation, closing, saving per connection
 │       ├── style.css
 │       ├── components/
-│       │   ├── LoginDialog.vue        Demande du mot de passe (affiché dès qu'une requête reçoit un 401)
-│       │   ├── ConnectionDialog.vue   Création / édition / test / suppression d'une connexion
-│       │   ├── DbTree.vue             Arbre bases → schémas → tables → colonnes (chargement à la demande)
-│       │   ├── EditorTabs.vue         Barre des onglets d'éditeur (ajout, renommage, fermeture)
-│       │   ├── SqlEditor.vue          Wrapper Monaco (v-model, un modèle par onglet, Ctrl+Entrée, Ctrl+Maj+Entrée) et autocomplétion
-│       │   ├── ResultPanel.vue        Un onglet par requête exécutée (lignes, commande, erreur, ignorée)
-│       │   └── ResultGrid.vue         Grille HTML : tri, NULL, valeur complète au double-clic, copie TSV
+│       │   ├── LoginDialog.vue        Password prompt (shown as soon as a request gets a 401)
+│       │   ├── ConnectionDialog.vue   Create / edit / test / delete a connection
+│       │   ├── DbTree.vue             Tree databases → schemas → tables → columns (loaded on demand)
+│       │   ├── EditorTabs.vue         Editor tab bar (add, rename, close)
+│       │   ├── SqlEditor.vue          Monaco wrapper (v-model, one model per tab, Ctrl+Enter, Ctrl+Shift+Enter) and completion
+│       │   ├── ResultPanel.vue        One tab per executed statement (rows, command, error, skipped)
+│       │   └── ResultGrid.vue         HTML grid: sorting, NULL, full value on double-click, TSV copy
 │       └── sql/
-│           ├── sources.ts             Autocomplétion sans Monaco : noms, index du schéma, tables lues par la requête
-│           ├── pgsql.worker.ts        Point d'entrée du worker du parseur PostgreSQL
-│           └── mysql.worker.ts        Point d'entrée du worker du parseur MySQL/MariaDB
-├── patches/                   Correctifs patch-package des dépendances
-├── **/*.test.ts               Tests Vitest, à côté du code testé
-├── data/connections.json      Connexions enregistrées, chiffrées (créé à l'exécution, ignoré par git)
-├── .env                       WEBGRIP_PASSWORD, WEBGRIP_SECRET (ignoré par git ; modèle : .env.example)
-├── dist/                      Build du front (`npm run build`)
-├── tsconfig*.json             tsconfig.app.json (SPA, vue-tsc) et tsconfig.node.json (API, outillage)
-├── .oxlintrc.json / .oxfmtrc.json   Lint (oxlint) et formatage (oxfmt)
-├── vitest.config.ts           Tests (racine du projet, contrairement à Vite)
-└── vite.config.ts             Proxy /api, écoute Tailscale + localhost, alias Monaco, build
+│           ├── sources.ts             Completion without Monaco: names, schema index, tables read by the statement
+│           ├── pgsql.worker.ts        Entry point of the PostgreSQL parser worker
+│           └── mysql.worker.ts        Entry point of the MySQL/MariaDB parser worker
+├── patches/                   patch-package fixes of dependencies
+├── **/*.test.ts               Vitest tests, next to the tested code
+├── data/connections.json      Saved connections, encrypted (created at run time, ignored by git)
+├── .env                       WEBGRIP_PASSWORD, WEBGRIP_SECRET (ignored by git; template: .env.example)
+├── dist/                      Front-end build (`npm run build`)
+├── tsconfig*.json             tsconfig.app.json (SPA, vue-tsc) and tsconfig.node.json (API, tooling)
+├── .oxlintrc.json / .oxfmtrc.json   Lint (oxlint) and formatting (oxfmt)
+├── vitest.config.ts           Tests (project root, unlike Vite)
+└── vite.config.ts             /api proxy, Tailscale + localhost listening, Monaco aliases, build
 ```
 
-## Réseau
+## Network
 
 ```
-navigateur ──► Vite :5180 ──(/api/*)──► API Express 127.0.0.1:3070 ──► PostgreSQL / MariaDB
-                 └── sert la SPA (dev : sources à la volée, preview : dist/)
+browser ──► Vite :5180 ──(/api/*)──► Express API 127.0.0.1:3070 ──► PostgreSQL / MariaDB
+              └── serves the SPA (dev: sources on the fly, preview: dist/)
 ```
 
-- Un seul port côté navigateur : Vite sert le front et proxifie `/api` vers le backend, qui n'est **jamais** exposé (adresse `127.0.0.1` codée en dur).
-- En `npm run dev`, Vite écoute sur l'IP de l'interface `tailscale0` ; un petit plugin (`localhostForward` dans `vite.config.ts`) redirige `127.0.0.1:5180` vers cette adresse pour garder `localhost` utilisable. `allowedHosts` autorise le nom de la machine et `*.ts.net` (MagicDNS). Sans Tailscale, Vite reste sur localhost.
-- `npm start` = API + `vite preview` du build, sur localhost uniquement.
-- Variables : `WEBGRIP_PASSWORD`, `WEBGRIP_SECRET`, `WEB_PORT` (5180), `PORT` (port interne de l'API, 3070), `WEBGRIP_DATA` (fichier des connexions). `server/index.ts` lit `.env` s'il existe (`process.loadEnvFile`, les variables déjà définies l'emportent) et refuse de démarrer sans mot de passe ni secret.
+- A single port for the browser: Vite serves the front end and proxies `/api` to the backend, which is **never** exposed (address `127.0.0.1` hard-coded).
+- Vite listens on the IP of the `tailscale0` interface; in `npm run dev`, a small plugin (`localhostForward` in `vite.config.ts`) forwards `127.0.0.1:5180` to that address to keep `localhost` usable. `allowedHosts` allows the machine name and `*.ts.net` (MagicDNS). Without Tailscale, Vite stays on localhost.
+- `npm start` = API + `vite preview` of the build, on the same address as the dev server.
+- Variables: `WEBGRIP_PASSWORD`, `WEBGRIP_SECRET`, `WEB_PORT` (5180), `PORT` (internal API port, 3070), `WEBGRIP_DATA` (connections file). `server/index.ts` reads `.env` when it exists (`process.loadEnvFile`, variables already set win) and refuses to start without a password and a secret.
 
 ## Backend
 
 ### API
 
-| Méthode | Route | Rôle |
+| Method | Route | Role |
 |---|---|---|
-| POST | `/api/login` | `{ password }` → pose le cookie de session (401 si faux, 429 après 10 échecs en une minute) |
-| POST | `/api/logout` | Efface le cookie |
-| GET | `/api/connections` | Liste des connexions (sans mot de passe, `hasPassword` à la place) |
-| POST | `/api/connections` | Crée ou modifie (mot de passe vide + `keepPassword` = garder l'ancien) |
-| DELETE | `/api/connections/:id` | Supprime et ferme le driver |
-| POST | `/api/connections/test` | Teste une configuration (renvoie la version du serveur) |
+| POST | `/api/login` | `{ password }` → sets the session cookie (401 if wrong, 429 after 10 failures in a minute) |
+| POST | `/api/logout` | Clears the cookie |
+| GET | `/api/connections` | Connection list (no password, `hasPassword` instead) |
+| POST | `/api/connections` | Creates or edits (empty password + `keepPassword` = keep the old one) |
+| DELETE | `/api/connections/:id` | Deletes and closes the driver |
+| POST | `/api/connections/test` | Tests a configuration (returns the server version) |
 | GET | `/api/c/:id/info` | `{ hasSchemas, databases }` |
-| GET | `/api/c/:id/schemas?db=` | Schémas (Postgres ; liste vide pour MariaDB) |
-| GET | `/api/c/:id/tables?db=&schema=` | Tables et vues avec leur type |
-| GET | `/api/c/:id/columns?db=&schema=&table=` | Colonnes : nom, type, not null, clé primaire |
-| GET | `/api/c/:id/completion?db=&schema=` | `{ current, schemas, tables: [{ schema, name, kind, columns: [{ name, type, pk }] }], functions }` pour l'autocomplétion (tous les schémas/bases utilisateur) |
-| GET | `/api/c/:id/describe?db=&schema=` | `{ markdown }` : moteur, version, tables/vues avec colonnes, clés, clés étrangères et index (structure seule, aucune donnée) |
+| GET | `/api/c/:id/schemas?db=` | Schemas (Postgres; empty list for MariaDB) |
+| GET | `/api/c/:id/tables?db=&schema=` | Tables and views with their kind |
+| GET | `/api/c/:id/columns?db=&schema=&table=` | Columns: name, type, not null, primary key |
+| GET | `/api/c/:id/completion?db=&schema=` | `{ current, schemas, tables: [{ schema, name, kind, columns: [{ name, type, pk }] }], functions }` for completion (every user schema/database) |
+| GET | `/api/c/:id/describe?db=&schema=` | `{ markdown }`: engine, version, tables/views with columns, keys, foreign keys and indexes (structure only, no data) |
 | POST | `/api/c/:id/query` | `{ db, schema, sql, maxRows }` → `{ results: [...] }` |
-| POST | `/api/c/:id/cancel` | `{ db }` : annule la requête en cours |
+| POST | `/api/c/:id/cancel` | `{ db }`: cancels the running query |
 
-Toutes les routes sauf `/api/login` exigent le cookie de session (sinon `401 { error }`).
-Les erreurs sont renvoyées en `4xx` avec `{ error }`. Les erreurs SQL, elles, font partie du résultat (`kind: 'error'`).
+Every route but `/api/login` requires the session cookie (else `401 { error }`).
+Errors are returned as `4xx` with `{ error }`. SQL errors, however, are part of the result (`kind: 'error'`).
 
 ### Drivers
 
-`app.ts` crée paresseusement un driver par connexion enregistrée et le jette quand la connexion est modifiée ou supprimée. Les deux drivers implémentent l'interface `Driver` (`server/drivers/types.ts`) :
+`app.ts` lazily creates one driver per saved connection and drops it when the connection is edited or deleted. Both drivers implement the `Driver` interface (`server/drivers/types.ts`):
 
 ```
 hasSchemas
@@ -116,55 +116,55 @@ test() · databases() · schemas(db) · tables(db, schema) · columns(db, schema
 run(db, schema, statements, maxRows) · cancel(db) · close()
 ```
 
-Chaque driver gère deux types de connexions :
+Each driver handles two kinds of connections:
 
-- **Métadonnées** : un petit pool (Postgres : un pool par base, car une connexion Postgres est liée à une base ; MariaDB : un pool unique, les requêtes nomment la base).
-- **Session de l'éditeur** : une connexion dédiée par base, qui exécute les requêtes l'une après l'autre. Les `BEGIN`, `SET` et tables temporaires persistent donc d'une exécution à l'autre, comme dans DataGrip. Une seule exécution à la fois par session (`busy`) ; l'annulation passe par le pool de métadonnées (`pg_cancel_backend(pid)` / `KILL QUERY threadId`).
+- **Metadata**: a small pool (Postgres: one pool per database, since a Postgres connection is bound to a database; MariaDB: a single pool, queries name the database).
+- **Editor session**: one dedicated connection per database, which runs statements one after the other. `BEGIN`, `SET` and temporary tables therefore persist from one run to the next, as in DataGrip. One run at a time per session (`busy`); cancelling goes through the metadata pool (`pg_cancel_backend(pid)` / `KILL QUERY threadId`).
 
-Particularités :
+Specifics:
 
-- **Postgres** : les valeurs sont renvoyées telles que le serveur les envoie en texte (aucune conversion en `Date`, nombre ou JSON), ce qui garde les dates, `numeric`, `int8` et `bytea` exacts. Les requêtes qui renvoient des lignes (`SELECT`, `WITH`, `VALUES`, `SHOW`, `EXPLAIN`…) passent par un curseur ; les autres par une requête simple. Le schéma choisi est appliqué via `SET search_path`. Les `NOTICE` sont collectées par requête. Les noms de types viennent de `pg_type` (mis en cache).
-- **MariaDB** : options `dateStrings`, `bigNumberStrings`, `jsonStrings` pour garder des valeurs textuelles ; les BLOB sont convertis en `0x…`. La session est ouverte directement sur la base choisie. Les warnings sont récupérés via `SHOW WARNINGS`.
+- **Postgres**: values are returned as the server sends them in text (no conversion to `Date`, number or JSON), which keeps dates, `numeric`, `int8` and `bytea` exact. Statements that return rows (`SELECT`, `WITH`, `VALUES`, `SHOW`, `EXPLAIN`…) go through a cursor; the others through a simple query. The chosen schema is applied with `SET search_path`. `NOTICE`s are collected per statement. Type names come from `pg_type` (cached).
+- **MariaDB**: options `dateStrings`, `bigNumberStrings`, `jsonStrings` keep textual values; BLOBs are converted to `0x…`. The session is opened directly on the chosen database. Warnings are read with `SHOW WARNINGS`.
 
-### Format d'un résultat
+### Result format
 
 ```js
 { sql, start, end, ms, notices,
   kind: 'rows',    columns: [{ name, type }], rows: [[...]], truncated, total? }
 | { kind: 'command', command, affected, info? }
 | { kind: 'error',   error: { message, detail?, hint?, code?, position? } }
-| { kind: 'skipped' }            // après une erreur, les requêtes suivantes ne sont pas exécutées
+| { kind: 'skipped' }            // after an error, the following statements are not run
 ```
 
-Les lignes sont des tableaux (pas des objets) pour supporter les noms de colonnes en double. `start`/`end` sont les positions de la requête dans le texte envoyé : le front s'en sert, avec `error.position`, pour placer le curseur sur l'erreur.
+Rows are arrays (not objects) to support duplicate column names. `start`/`end` are the statement's positions in the text sent: the front end uses them, with `error.position`, to place the cursor on the error.
 
-## Découpage SQL (`shared/splitSql.ts`)
+## SQL splitting (`shared/splitSql.ts`)
 
-Un seul module, importé par le serveur (pour exécuter requête par requête) et par l'éditeur (pour trouver la requête sous le curseur). Il coupe sur `;` en ignorant ceux situés dans les chaînes `'…'`, identifiants `"…"` / `` `…` ``, commentaires `--`, `#` (MariaDB) et `/* */`, et blocs `$tag$…$tag$` (Postgres). Il renvoie `{ sql, start, end }` pour chaque requête.
+A single module, imported by the server (to run statement by statement) and by the editor (to find the statement under the cursor). It splits on `;`, ignoring those inside strings `'…'`, identifiers `"…"` / `` `…` ``, comments `--`, `#` (MariaDB) and `/* */`, and `$tag$…$tag$` blocks (Postgres). It returns `{ sql, start, end }` for each statement.
 
-## Éditeur et autocomplétion (`SqlEditor.vue`)
+## Editor and completion (`SqlEditor.vue`)
 
-- **Chargement** : le cœur de Monaco et ses fonctionnalités, plus les langages `pgsql` / `mysql` de monaco-sql-languages (importés par chemins profonds : l'index du paquet chargerait les grammaires de tous les dialectes). Les parseurs (≈ 2,2 Mo chacun) tournent dans un web worker, chargé seulement pour le dialecte utilisé.
-- **Adaptation à Monaco ≥ 0.53** : monaco-sql-languages utilise encore les anciens chemins (`monaco-editor/esm/vs/...`) et l'ancienne API de workers (`createWebWorker({ moduleId, label, createData })`). Des alias dans `vite.config.ts` résolvent les chemins, et `SqlEditor.vue` enveloppe `monaco.editor.createWebWorker` pour fournir le `Worker` (`client/src/sql/*.worker.ts`) et lui envoyer `createData`.
-- **Complétion** : à chaque demande, le parseur indique ce que la grammaire attend au curseur (table, colonne, fonction, base… et les mots-clés valides) et les entités de la requête (tables, alias, sous-requêtes, CTE). Le `completionService` les croise avec le schéma renvoyé par `/completion` :
-  - tables de tous les schémas (non qualifiées pour le schéma courant), schémas, puis tables du schéma après `schema.` ;
-  - colonnes typées des tables visibles depuis la requête, `alias.` → colonnes de cette table, colonnes des sous-requêtes et CTE (`*` développé) ;
-  - mots-clés dans l'ordre utile (FROM, WHERE, JOIN… d'abord), et en premier juste après un identifiant terminé (`from t |`, `where a = 1 |`) ;
-  - fonctions utilisateur puis intégrées.
-- **Contournements des limites du parseur** : il ne rattache pas les tables d'un UPDATE/DELETE à leur requête (visibilité décidée par position avec `splitSql`), rate certains alias (lus dans le texte), ne voit pas la liste de colonnes d'un `INSERT INTO t (` ni, en MySQL, les tables d'un UPDATE (extraites du texte par regex). `patches/dt-sql-parser+4.6.0.patch` corrige un plantage sur ces mêmes requêtes.
-- **Diagnostics et formatage** : erreurs de syntaxe soulignées (worker), formatage par Ctrl+Alt+F ou le menu contextuel.
+- **Loading**: Monaco's core and features, plus the `pgsql` / `mysql` languages of monaco-sql-languages (imported through deep paths: the package index would load the grammars of every dialect). The parsers (≈ 2.2 MB each) run in a web worker, loaded only for the dialect in use.
+- **Monaco ≥ 0.53 adaptation**: monaco-sql-languages still uses the old paths (`monaco-editor/esm/vs/...`) and the old worker API (`createWebWorker({ moduleId, label, createData })`). Aliases in `vite.config.ts` resolve the paths, and `SqlEditor.vue` wraps `monaco.editor.createWebWorker` to provide the `Worker` (`client/src/sql/*.worker.ts`) and send it `createData`.
+- **Completion**: on each request, the parser tells what the grammar expects at the caret (table, column, function, database… and the valid keywords) and the statement's entities (tables, aliases, subqueries, CTEs). The `completionService` crosses them with the schema returned by `/completion`:
+  - tables of every schema (unqualified for the current schema), schemas, then the schema's tables after `schema.`;
+  - typed columns of the tables visible from the statement, `alias.` → that table's columns, columns of subqueries and CTEs (`*` expanded);
+  - keywords in a useful order (FROM, WHERE, JOIN… first), and first right after a finished identifier (`from t |`, `where a = 1 |`);
+  - user functions, then built-in ones.
+- **Workarounds for parser limits**: it does not attach the tables of an UPDATE/DELETE to their statement (visibility decided by position with `splitSql`), misses some aliases (read from the text), does not see the column list of an `INSERT INTO t (` nor, in MySQL, the tables of an UPDATE (extracted from the text by regex). `patches/dt-sql-parser+4.6.0.patch` fixes a crash on those same statements.
+- **Diagnostics and formatting**: syntax errors underlined (worker), formatting with Ctrl+Alt+F or the context menu.
 
-## Front-end
+## Front end
 
-- **État** : tout l'état partagé vit dans `App.vue` (refs) et descend par props ; les composants remontent des événements (`run`, `context`, `open-table`, `reload`, `saved`…). Pas de store.
-- **Persistance navigateur** (`localStorage`, préfixe `webgrip.`) : thème, connexion courante, base/schéma par connexion, onglets d'éditeur par connexion (`tabs.<id>` : nom et texte de chaque onglet, onglet actif ; l'ancien `sql.<id>` devient le premier onglet), hauteur de l'éditeur, nombre max de lignes.
-- **Onglets d'éditeur** : `App.vue` tient les onglets de la connexion courante (`tabs.ts`) et les résultats de chaque onglet, en mémoire seulement. `SqlEditor` reçoit l'id de l'onglet (`docId`) et garde un modèle Monaco par onglet : texte, historique d'annulation, curseur et défilement sont propres à chaque onglet. Une exécution range ses résultats dans l'onglet qui l'a lancée, même si l'utilisateur est passé à un autre entre-temps. Toutes les exécutions passent par la même session de la base, une à la fois.
-- **Flux d'exécution** : `SqlEditor` émet `run({ sql, offset })` (sélection, requête sous le curseur ou tout le script) → `App.vue` appelle `/query` avec la base et le schéma courants → `ResultPanel` affiche un onglet par résultat et ouvre la première erreur s'il y en a une.
-- **Arbre** (`DbTree.vue`) : nœuds chargés à l'ouverture, affichés à plat (calcul de l'indentation) pour rester léger ; un clic sur une base/un schéma change le contexte de l'éditeur, un double-clic sur une table ajoute et exécute `SELECT * … LIMIT n`.
-- **Grille** (`ResultGrid.vue`) : une simple `<table>` HTML (en-tête et numéros de ligne collants), plutôt qu'un `v-data-table`, pour garder la main sur le rendu et la densité ; la limite de lignes côté serveur borne sa taille.
+- **State**: all shared state lives in `App.vue` (refs) and goes down through props; components send events up (`run`, `context`, `open-table`, `reload`, `saved`…). No store.
+- **Browser persistence** (`localStorage`, prefix `webgrip.`): theme, current connection, database/schema per connection, editor tabs per connection (`tabs.<id>`: name and text of each tab, active tab; the old `sql.<id>` becomes the first tab), editor height, max rows.
+- **Editor tabs**: `App.vue` holds the current connection's tabs (`tabs.ts`) and each tab's results, in memory only. `SqlEditor` receives the tab id (`docId`) and keeps one Monaco model per tab: text, undo history, cursor and scroll belong to each tab. A run stores its results in the tab that started it, even if the user has switched to another one meanwhile. All runs go through the same database session, one at a time.
+- **Execution flow**: `SqlEditor` emits `run({ sql, offset })` (selection, statement under the cursor or whole script) → `App.vue` calls `/query` with the current database and schema → `ResultPanel` shows one tab per result and opens the first error if there is one.
+- **Tree** (`DbTree.vue`): nodes loaded when opened, rendered flat (computed indentation) to stay light; a click on a database/schema changes the editor's context, a double-click on a table appends and runs `SELECT * … LIMIT n`.
+- **Grid** (`ResultGrid.vue`): a plain HTML `<table>` (sticky header and row numbers), rather than a `v-data-table`, to keep control of rendering and density; the server-side row limit bounds its size.
 
-## Sécurité
+## Security
 
-- **Accès** : un mot de passe unique (`WEBGRIP_PASSWORD`). `/api/login` le compare en temps constant ; en cas de succès, il pose un cookie `webgrip_session` (`HttpOnly`, `SameSite=Strict`, `Path=/api`, 30 jours) qui contient une date d'expiration signée par HMAC. Aucune session n'est gardée côté serveur : le cookie survit aux redémarrages de l'API, et changer le mot de passe ou le secret invalide tous les cookies. Les échecs sont ralentis (500 ms) et limités à 10 par minute. Le cookie n'a pas l'attribut `Secure` : le tailnet est en HTTP (chiffré par WireGuard).
-- **Connexions enregistrées** : `data/connections.json` (permissions `600`) est chiffré en AES-256-GCM, avec une clé dérivée de `WEBGRIP_SECRET` par scrypt (sel et IV neufs à chaque écriture). Un fichier illisible (mauvais secret, fichier altéré) arrête le démarrage plutôt que d'être écrasé. Les mots de passe ne sont jamais renvoyés au navigateur.
-- **Front** : toute réponse `401` (`onUnauthorized` dans `api.ts`) affiche `LoginDialog` ; une fois connecté, l'app recharge les connexions.
+- **Access**: a single password (`WEBGRIP_PASSWORD`). `/api/login` compares it in constant time; on success it sets a `webgrip_session` cookie (`HttpOnly`, `SameSite=Strict`, `Path=/api`, 30 days) holding an expiry date signed with HMAC. No session is kept on the server: the cookie survives API restarts, and changing the password or the secret invalidates every cookie. Failures are slowed down (500 ms) and limited to 10 per minute. The cookie has no `Secure` attribute: the tailnet is plain HTTP (encrypted by WireGuard).
+- **Saved connections**: `data/connections.json` (mode `600`) is encrypted with AES-256-GCM, with a key derived from `WEBGRIP_SECRET` by scrypt (fresh salt and IV on each write). An unreadable file (wrong secret, altered file) stops the startup instead of being overwritten. Passwords are never sent to the browser.
+- **Front end**: any `401` answer (`onUnauthorized` in `api.ts`) shows `LoginDialog`; once logged in, the app reloads the connections.
