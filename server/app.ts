@@ -8,6 +8,8 @@ import { MariadbDriver } from './drivers/mariadb.ts'
 import type { Driver, DriverConfig } from './drivers/types.ts'
 import { splitSql } from '../shared/splitSql.ts'
 import { toMarkdown } from './describe.ts'
+import { createAuth } from './auth.ts'
+import { isSealed, seal, unseal } from './vault.ts'
 import type { ConnectionConfig, ConnectionForm, PublicConnection } from '../shared/types.ts'
 
 export class HttpError extends Error {
@@ -40,22 +42,36 @@ const h = (fn: (req: Request, res: Response) => unknown) => async (req: Request,
 const connId = (req: Request) => String(req.params.id)
 
 export interface AppOptions {
-  // saved connections (plain JSON file, passwords included: keep this tool local)
+  // saved connections, passwords included, encrypted with `secret`
   dataFile: string
+  // encryption key of dataFile, and key of the session cookies
+  secret: string
+  // the password asked at login
+  password: string
   makeDriver?: (cfg: DriverConfig) => Driver
 }
 
-export function createApp({ dataFile, makeDriver = defaultDriver }: AppOptions) {
-  const load = (): ConnectionConfig[] => {
-    try {
-      return JSON.parse(fs.readFileSync(dataFile, 'utf8'))
-    } catch {
-      return []
-    }
-  }
+export function createApp({ dataFile, secret, password, makeDriver = defaultDriver }: AppOptions) {
   const save = (list: ConnectionConfig[]) => {
     fs.mkdirSync(path.dirname(dataFile), { recursive: true })
-    fs.writeFileSync(dataFile, JSON.stringify(list, null, 2), { mode: 0o600 })
+    fs.writeFileSync(dataFile, seal(JSON.stringify(list), secret), { mode: 0o600 })
+    fs.chmodSync(dataFile, 0o600) // the mode above only applies to a new file
+  }
+  // A missing file means no connection yet; an unreadable one stops the startup (rather than being overwritten).
+  const load = (): ConnectionConfig[] => {
+    let text: string
+    try {
+      text = fs.readFileSync(dataFile, 'utf8')
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code === 'ENOENT') return []
+      throw e
+    }
+    const stored: unknown = JSON.parse(text)
+    if (isSealed(stored)) return JSON.parse(unseal(stored, secret))
+    // file written before encryption: encrypt it now
+    const list = stored as ConnectionConfig[]
+    save(list)
+    return list
   }
   let connections = load()
 
@@ -79,6 +95,11 @@ export function createApp({ dataFile, makeDriver = defaultDriver }: AppOptions) 
 
   const app = express()
   app.use(express.json({ limit: '20mb' }))
+
+  const auth = createAuth({ password, secret })
+  app.post('/api/login', auth.login)
+  app.post('/api/logout', auth.logout)
+  app.use('/api', auth.guard)
 
   app.get(
     '/api/connections',

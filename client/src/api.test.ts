@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { api, copyText, qs, quoteIdent, store } from './api.ts'
+import { api, copyText, onUnauthorized, qs, quoteIdent, store } from './api.ts'
 
 afterEach(() => {
   vi.unstubAllGlobals()
@@ -17,6 +17,24 @@ describe('qs', () => {
 })
 
 describe('api', () => {
+  it('reports a 401 to the unauthorized handler, and still throws', async () => {
+    const handler = vi.fn()
+    onUnauthorized(handler)
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(JSON.stringify({ error: 'Non authentifié' }), { status: 401 })),
+    )
+    await expect(api.get('/connections')).rejects.toThrow('Non authentifié')
+    expect(handler).toHaveBeenCalledOnce()
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(JSON.stringify({ error: 'boom' }), { status: 400 })),
+    )
+    await expect(api.get('/connections')).rejects.toThrow('boom')
+    expect(handler).toHaveBeenCalledOnce()
+    onUnauthorized(() => {})
+  })
+
   it('sends JSON and returns the parsed answer', async () => {
     const fetch = vi.fn(async () => new Response(JSON.stringify({ ok: 1 }), { status: 200 }))
     vi.stubGlobal('fetch', fetch)

@@ -26,8 +26,10 @@ Le code (TypeScript) tient en ~2 700 lignes hors tests, sans base de données pr
 ```
 webgrip/
 ├── server/                    Backend (API seule, n'écoute que sur 127.0.0.1:3070), exécuté tel quel par Node (type stripping)
-│   ├── index.ts               Point d'entrée : lit l'environnement et écoute
+│   ├── index.ts               Point d'entrée : lit .env et l'environnement, puis écoute
 │   ├── app.ts                 createApp() Express : routes, connexions enregistrées, cache des drivers
+│   ├── auth.ts                Mot de passe, cookie de session signé, garde des routes /api
+│   ├── vault.ts               Chiffrement AES-256-GCM du fichier des connexions
 │   ├── describe.ts            Export de structure en Markdown (pour coller dans un chat)
 │   └── drivers/
 │       ├── types.ts           Interface Driver commune
@@ -45,6 +47,7 @@ webgrip/
 │       ├── grid.ts            Grille : détection des nombres, tri, export TSV
 │       ├── style.css
 │       ├── components/
+│       │   ├── LoginDialog.vue        Demande du mot de passe (affiché dès qu'une requête reçoit un 401)
 │       │   ├── ConnectionDialog.vue   Création / édition / test / suppression d'une connexion
 │       │   ├── DbTree.vue             Arbre bases → schémas → tables → colonnes (chargement à la demande)
 │       │   ├── SqlEditor.vue          Wrapper Monaco (v-model, Ctrl+Entrée, Ctrl+Maj+Entrée) et autocomplétion
@@ -56,7 +59,8 @@ webgrip/
 │           └── mysql.worker.ts        Point d'entrée du worker du parseur MySQL/MariaDB
 ├── patches/                   Correctifs patch-package des dépendances
 ├── **/*.test.ts               Tests Vitest, à côté du code testé
-├── data/connections.json      Connexions enregistrées (créé à l'exécution, ignoré par git)
+├── data/connections.json      Connexions enregistrées, chiffrées (créé à l'exécution, ignoré par git)
+├── .env                       WEBGRIP_PASSWORD, WEBGRIP_SECRET (ignoré par git ; modèle : .env.example)
 ├── dist/                      Build du front (`npm run build`)
 ├── tsconfig*.json             tsconfig.app.json (SPA, vue-tsc) et tsconfig.node.json (API, outillage)
 ├── .oxlintrc.json / .oxfmtrc.json   Lint (oxlint) et formatage (oxfmt)
@@ -74,7 +78,7 @@ navigateur ──► Vite :5180 ──(/api/*)──► API Express 127.0.0.1:30
 - Un seul port côté navigateur : Vite sert le front et proxifie `/api` vers le backend, qui n'est **jamais** exposé (adresse `127.0.0.1` codée en dur).
 - En `npm run dev`, Vite écoute sur l'IP de l'interface `tailscale0` ; un petit plugin (`localhostForward` dans `vite.config.ts`) redirige `127.0.0.1:5180` vers cette adresse pour garder `localhost` utilisable. `allowedHosts` autorise le nom de la machine et `*.ts.net` (MagicDNS). Sans Tailscale, Vite reste sur localhost.
 - `npm start` = API + `vite preview` du build, sur localhost uniquement.
-- Variables : `WEB_PORT` (5180), `PORT` (port interne de l'API, 3070), `WEBGRIP_DATA` (fichier des connexions).
+- Variables : `WEBGRIP_PASSWORD`, `WEBGRIP_SECRET`, `WEB_PORT` (5180), `PORT` (port interne de l'API, 3070), `WEBGRIP_DATA` (fichier des connexions). `server/index.ts` lit `.env` s'il existe (`process.loadEnvFile`, les variables déjà définies l'emportent) et refuse de démarrer sans mot de passe ni secret.
 
 ## Backend
 
@@ -82,6 +86,8 @@ navigateur ──► Vite :5180 ──(/api/*)──► API Express 127.0.0.1:30
 
 | Méthode | Route | Rôle |
 |---|---|---|
+| POST | `/api/login` | `{ password }` → pose le cookie de session (401 si faux, 429 après 10 échecs en une minute) |
+| POST | `/api/logout` | Efface le cookie |
 | GET | `/api/connections` | Liste des connexions (sans mot de passe, `hasPassword` à la place) |
 | POST | `/api/connections` | Crée ou modifie (mot de passe vide + `keepPassword` = garder l'ancien) |
 | DELETE | `/api/connections/:id` | Supprime et ferme le driver |
@@ -95,6 +101,7 @@ navigateur ──► Vite :5180 ──(/api/*)──► API Express 127.0.0.1:30
 | POST | `/api/c/:id/query` | `{ db, schema, sql, maxRows }` → `{ results: [...] }` |
 | POST | `/api/c/:id/cancel` | `{ db }` : annule la requête en cours |
 
+Toutes les routes sauf `/api/login` exigent le cookie de session (sinon `401 { error }`).
 Les erreurs sont renvoyées en `4xx` avec `{ error }`. Les erreurs SQL, elles, font partie du résultat (`kind: 'error'`).
 
 ### Drivers
@@ -155,5 +162,6 @@ Un seul module, importé par le serveur (pour exécuter requête par requête) e
 
 ## Sécurité
 
-- Les mots de passe sont stockés **en clair** dans `data/connections.json` (permissions `600`) et ne sont jamais renvoyés au navigateur.
-- Aucune authentification : quiconque atteint le port de Vite (localhost ou tailnet) a un accès SQL complet aux connexions enregistrées.
+- **Accès** : un mot de passe unique (`WEBGRIP_PASSWORD`). `/api/login` le compare en temps constant ; en cas de succès, il pose un cookie `webgrip_session` (`HttpOnly`, `SameSite=Strict`, `Path=/api`, 30 jours) qui contient une date d'expiration signée par HMAC. Aucune session n'est gardée côté serveur : le cookie survit aux redémarrages de l'API, et changer le mot de passe ou le secret invalide tous les cookies. Les échecs sont ralentis (500 ms) et limités à 10 par minute. Le cookie n'a pas l'attribut `Secure` : le tailnet est en HTTP (chiffré par WireGuard).
+- **Connexions enregistrées** : `data/connections.json` (permissions `600`) est chiffré en AES-256-GCM, avec une clé dérivée de `WEBGRIP_SECRET` par scrypt (sel et IV neufs à chaque écriture). Un fichier illisible (mauvais secret, fichier altéré) arrête le démarrage plutôt que d'être écrasé. Les mots de passe ne sont jamais renvoyés au navigateur.
+- **Front** : toute réponse `401` (`onUnauthorized` dans `api.ts`) affiche `LoginDialog` ; une fois connecté, l'app recharge les connexions.

@@ -70,6 +70,7 @@
           @click="copySchema"
         />
         <v-btn :icon="dark ? 'mdi-weather-sunny' : 'mdi-weather-night'" variant="text" size="small" @click="toggleTheme" />
+        <v-btn icon="mdi-logout" variant="text" size="small" title="Se déconnecter" @click="logout" />
       </div>
     </v-app-bar>
 
@@ -107,6 +108,7 @@
       </div>
     </v-main>
 
+    <LoginDialog v-if="needLogin" @logged-in="onLoggedIn" />
     <ConnectionDialog v-model="dialog" :conn="editing" @saved="onSaved" @deleted="onDeleted" />
     <v-snackbar v-model="snack.open" :color="snack.color" timeout="6000">{{ snack.text }}</v-snackbar>
   </v-app>
@@ -115,11 +117,12 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, nextTick, reactive } from 'vue'
 import { useTheme } from 'vuetify'
-import { api, copyText, quoteIdent, store } from './api.ts'
+import { api, copyText, onUnauthorized, quoteIdent, store } from './api.ts'
 import SqlEditor, { type RunRequest } from './components/SqlEditor.vue'
 import DbTree, { type TableRef, type TreeContext } from './components/DbTree.vue'
 import ResultPanel from './components/ResultPanel.vue'
 import ConnectionDialog from './components/ConnectionDialog.vue'
+import LoginDialog from './components/LoginDialog.vue'
 import type { CompletionInfo, ConnectionInfo, PublicConnection, StatementResult } from '../../shared/types.ts'
 
 const theme = useTheme()
@@ -187,15 +190,37 @@ function onDeleted(id: string) {
   if (connId.value === id) connId.value = connections.value[0]?.id || null
 }
 
-onMounted(async () => {
+// ---- login: any 401 (no session yet, or an expired one) shows the password dialog ----
+const needLogin = ref(false)
+onUnauthorized(() => {
+  needLogin.value = true
+})
+
+async function loadConnections() {
   try {
     connections.value = await api.get<PublicConnection[]>('/connections')
   } catch (e) {
-    notify(e)
+    if (!needLogin.value) notify(e)
+    return
   }
   const last = store.get<string | null>('conn', null)
-  connId.value = connections.value.some((c) => c.id === last) ? last : connections.value[0]?.id || null
-})
+  const id = connections.value.some((c) => c.id === last) ? last : connections.value[0]?.id || null
+  if (id === connId.value) loadInfo()
+  else connId.value = id
+}
+onMounted(loadConnections)
+
+function onLoggedIn() {
+  needLogin.value = false
+  void loadConnections()
+}
+
+async function logout() {
+  try {
+    await api.post('/logout')
+  } catch {}
+  needLogin.value = true
+}
 
 watch(connId, (id, old) => {
   if (old) store.set('sql.' + old, sqlText.value)

@@ -5,6 +5,7 @@ import type { AddressInfo } from 'node:net'
 import type { Server } from 'node:http'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createApp } from './app.ts'
+import { unseal } from './vault.ts'
 import type { Driver, DriverConfig } from './drivers/types.ts'
 import type { PublicConnection, Statement } from '../shared/types.ts'
 
@@ -33,6 +34,23 @@ let dataFile: string
 let server: Server
 let base: string
 let made: ReturnType<typeof fakeDriver>[]
+let cookie: string
+
+const secret = 'test-secret-0123456789'
+const password = 'pw'
+const options = { secret, password }
+// what is stored on disk, decrypted
+const stored = () => JSON.parse(unseal(JSON.parse(fs.readFileSync(dataFile, 'utf8')), secret))
+
+async function listen(app: ReturnType<typeof createApp>) {
+  const s = app.listen(0, '127.0.0.1')
+  await new Promise((resolve) => s.once('listening', resolve))
+  return { server: s, base: `http://127.0.0.1:${(s.address() as AddressInfo).port}/api` }
+}
+
+async function login(url: string, pw: string) {
+  return fetch(url + '/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ password: pw }) })
+}
 
 beforeEach(async () => {
   dir = fs.mkdtempSync(path.join(os.tmpdir(), 'webgrip-'))
@@ -40,15 +58,15 @@ beforeEach(async () => {
   made = []
   const app = createApp({
     dataFile,
+    ...options,
     makeDriver: (cfg) => {
       const d = fakeDriver(cfg)
       made.push(d)
       return d
     },
   })
-  server = app.listen(0, '127.0.0.1')
-  await new Promise((resolve) => server.once('listening', resolve))
-  base = `http://127.0.0.1:${(server.address() as AddressInfo).port}/api`
+  ;({ server, base } = await listen(app))
+  cookie = (await login(base, password)).headers.get('set-cookie')!.split(';')[0]
 })
 
 afterEach(async () => {
@@ -59,7 +77,7 @@ afterEach(async () => {
 async function call(method: string, url: string, body?: unknown) {
   const res = await fetch(base + url, {
     method,
-    headers: body ? { 'content-type': 'application/json' } : {},
+    headers: body ? { 'content-type': 'application/json', cookie } : { cookie },
     body: body ? JSON.stringify(body) : undefined,
   })
   // oxlint-disable-next-line typescript/no-explicit-any -- each test knows the shape it expects
@@ -83,32 +101,49 @@ describe('connections', () => {
       hasPassword: true,
     })
     expect((await call('GET', '/connections')).body).toEqual([c])
-    // stored on disk, password included, readable by the owner only
-    const stored = JSON.parse(fs.readFileSync(dataFile, 'utf8'))
-    expect(stored[0].password).toBe('secret')
+    // stored on disk encrypted, password included, readable by the owner only
+    expect(fs.readFileSync(dataFile, 'utf8')).not.toContain('secret')
+    expect(stored()[0].password).toBe('secret')
     expect(fs.statSync(dataFile).mode & 0o777).toBe(0o600)
   })
 
   it('keeps the stored password on edit only when asked to', async () => {
     const c = await saveConn({ name: 'db', user: 'bob', password: 'secret', type: 'mariadb' })
     await saveConn({ ...c, name: 'renamed', password: '', keepPassword: true })
-    let stored = JSON.parse(fs.readFileSync(dataFile, 'utf8'))
-    expect(stored).toHaveLength(1)
-    expect(stored[0]).toMatchObject({ id: c.id, name: 'renamed', type: 'mariadb', password: 'secret' })
+    expect(stored()).toHaveLength(1)
+    expect(stored()[0]).toMatchObject({ id: c.id, name: 'renamed', type: 'mariadb', password: 'secret' })
 
     await saveConn({ ...c, password: '', keepPassword: false })
-    stored = JSON.parse(fs.readFileSync(dataFile, 'utf8'))
-    expect(stored[0].password).toBe('')
+    expect(stored()[0].password).toBe('')
   })
 
   it('reloads the saved connections at startup', async () => {
     const c = await saveConn({ user: 'bob', host: 'db' })
-    const app = createApp({ dataFile, makeDriver: fakeDriver })
-    const other = app.listen(0, '127.0.0.1')
-    await new Promise((resolve) => other.once('listening', resolve))
-    const res = await fetch(`http://127.0.0.1:${(other.address() as AddressInfo).port}/api/connections`)
+    const other = await listen(createApp({ dataFile, ...options, makeDriver: fakeDriver }))
+    // the session cookie stays valid across restarts
+    const res = await fetch(other.base + '/connections', { headers: { cookie } })
     expect(await res.json()).toEqual([c])
-    await new Promise((resolve) => other.close(resolve))
+    await new Promise((resolve) => other.server.close(resolve))
+  })
+
+  it('encrypts a plain-text connections file written by an older version', async () => {
+    const plain = [{ id: 'x', name: 'old', type: 'postgres', host: 'h', user: 'u', password: 'p', database: '', ssl: false }]
+    fs.mkdirSync(path.dirname(dataFile))
+    fs.writeFileSync(dataFile, JSON.stringify(plain), { mode: 0o644 })
+    const other = await listen(createApp({ dataFile, ...options, makeDriver: fakeDriver }))
+    expect(fs.readFileSync(dataFile, 'utf8')).not.toContain('"p"')
+    expect(stored()).toEqual(plain)
+    expect(fs.statSync(dataFile).mode & 0o777).toBe(0o600)
+    const res = await fetch(other.base + '/connections', { headers: { cookie } })
+    const { password: _, ...pub } = plain[0]
+    expect(await res.json()).toEqual([{ ...pub, hasPassword: true }])
+    await new Promise((resolve) => other.server.close(resolve))
+  })
+
+  it('refuses to start with the wrong secret instead of losing the connections', async () => {
+    await saveConn({ user: 'bob' })
+    expect(() => createApp({ dataFile, secret: 'another-secret-012345', password })).toThrow(/WEBGRIP_SECRET/)
+    expect(stored()).toHaveLength(1)
   })
 
   it('deletes a connection and closes its driver', async () => {
@@ -138,18 +173,18 @@ describe('connections', () => {
   it('reports a failed test as a 400 with the error message', async () => {
     const app = createApp({
       dataFile,
+      ...options,
       makeDriver: (cfg) => ({ ...fakeDriver(cfg), test: async () => Promise.reject(new Error('connection refused')) }),
     })
-    const other = app.listen(0, '127.0.0.1')
-    await new Promise((resolve) => other.once('listening', resolve))
-    const res = await fetch(`http://127.0.0.1:${(other.address() as AddressInfo).port}/api/connections/test`, {
+    const other = await listen(app)
+    const res = await fetch(other.base + '/connections/test', {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', cookie },
       body: JSON.stringify({ user: 'bob' }),
     })
     expect(res.status).toBe(400)
     expect(await res.json()).toEqual({ error: 'connection refused' })
-    await new Promise((resolve) => other.close(resolve))
+    await new Promise((resolve) => other.server.close(resolve))
   })
 })
 
@@ -198,5 +233,36 @@ describe('database routes', () => {
     const c = await saveConn({ user: 'bob' })
     expect((await call('POST', `/c/${c.id}/cancel`, { db: 'app' })).body).toEqual({ cancelled: true })
     expect(made[0].cancel).toHaveBeenCalledWith('app')
+  })
+})
+
+describe('authentication', () => {
+  it('answers 401 to every route without a valid session cookie', async () => {
+    for (const c of [undefined, `webgrip_session=9999999999.forged`, 'webgrip_session=']) {
+      const res = await fetch(base + '/connections', { headers: c ? { cookie: c } : {} })
+      expect(res.status).toBe(401)
+      expect(await res.json()).toEqual({ error: 'Non authentifié' })
+    }
+    expect((await fetch(base + '/c/x/query', { method: 'POST' })).status).toBe(401)
+  })
+
+  it('logs in with the right password only, with a cookie restricted to the API', async () => {
+    const bad = await login(base, 'wrong')
+    expect(bad.status).toBe(401)
+    expect(bad.headers.get('set-cookie')).toBeNull()
+    const ok = await login(base, password)
+    expect(ok.status).toBe(200)
+    expect(ok.headers.get('set-cookie')).toMatch(/^webgrip_session=\d+\.[\w-]+; Path=\/api; HttpOnly; SameSite=Strict; Max-Age=2592000$/)
+  })
+
+  it('invalidates the sessions when the password changes', async () => {
+    const other = await listen(createApp({ dataFile, secret, password: 'new', makeDriver: fakeDriver }))
+    expect((await fetch(other.base + '/connections', { headers: { cookie } })).status).toBe(401)
+    await new Promise((resolve) => other.server.close(resolve))
+  })
+
+  it('clears the cookie on logout', async () => {
+    const res = await fetch(base + '/logout', { method: 'POST', headers: { cookie } })
+    expect(res.headers.get('set-cookie')).toMatch(/^webgrip_session=; .*Max-Age=0$/)
   })
 })

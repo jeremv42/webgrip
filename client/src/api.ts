@@ -1,5 +1,11 @@
 import type { Dialect } from '../../shared/types.ts'
 
+// Called when the API answers 401 (no session, or an expired one): the app then asks for the password.
+let unauthorized = () => {}
+export const onUnauthorized = (fn: () => void) => {
+  unauthorized = fn
+}
+
 async function request<T>(method: string, url: string, body?: unknown): Promise<T> {
   const res = await fetch('/api' + url, {
     method,
@@ -7,6 +13,7 @@ async function request<T>(method: string, url: string, body?: unknown): Promise<
     body: body ? JSON.stringify(body) : undefined,
   })
   const data = await res.json().catch(() => ({ error: res.statusText }))
+  if (res.status === 401) unauthorized()
   if (!res.ok) throw new Error(data.error || res.statusText)
   return data
 }
