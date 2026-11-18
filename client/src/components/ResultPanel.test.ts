@@ -4,7 +4,7 @@ import { mount } from '@vue/test-utils'
 import { createVuetify } from 'vuetify'
 import * as components from 'vuetify/components'
 import ResultPanel from './ResultPanel.vue'
-import type { StatementResult } from '../../../shared/types.ts'
+import type { PlanNode, StatementResult } from '../../../shared/types.ts'
 
 const vuetify = createVuetify({ components })
 const mountPanel = (results: StatementResult[], active = 0) =>
@@ -61,5 +61,53 @@ describe('ResultPanel', () => {
     expect(w.text()).toContain('syntax error at or near "selec"')
     expect(w.text()).toContain('HINT: Check the keyword')
     expect(w.text()).toContain('code 42601')
+  })
+
+  it('shows the plan the driver parsed, with the raw output one click away', async () => {
+    const node = (title: string, time: number, self: number, children: PlanNode[] = []): PlanNode => ({
+      title,
+      details: [],
+      rows: 10,
+      estRows: 10,
+      loops: 1,
+      time,
+      self,
+      children,
+    })
+    const plan: StatementResult = {
+      sql: 'select …',
+      start: 0,
+      end: 10,
+      kind: 'rows',
+      explain: 'analyze',
+      columns: [{ name: 'QUERY PLAN', type: 'json' }],
+      rows: [['[{"Plan": {"Node Type": "Limit"}}]']],
+      // as the driver parses it
+      plan: {
+        analyze: true,
+        summary: ['Execution 8 ms'],
+        total: 8,
+        root: node('Limit', 8, 1, [node('Sort', 7, 3, [node('Seq Scan on orders o', 4, 4)])]),
+      },
+      truncated: false,
+      ms: 9,
+    }
+    const w = mountPanel([plan])
+    expect(w.find('.v-tab').text()).toContain('ANALYZE select')
+    expect(w.text()).toContain('EXPLAIN ANALYZE')
+    const ops = w.findAll('tbody td.op .title').map((t) => t.text())
+    expect(ops[0]).toBe('Limit')
+    expect(ops).toContain('Seq Scan on orders o')
+    // collapse the root: only it stays
+    await w.find('tbody .caret').trigger('click')
+    expect(w.findAll('tbody tr')).toHaveLength(1)
+    await w
+      .findAll('button')
+      .find((b) => b.text() === 'Raw')!
+      .trigger('click')
+    // the engine's JSON, indented
+    expect(w.find('pre.raw').text()).toMatch(/^\[\n {2}\{\n {4}"Plan": \{/)
+    expect(w.find('tbody').exists()).toBe(false)
+    localStorage.clear()
   })
 })

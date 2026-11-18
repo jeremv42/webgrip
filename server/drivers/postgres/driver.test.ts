@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
-import { PostgresDriver, ident } from './postgres.ts'
-import type { Statement } from '../../shared/types.ts'
+import { PostgresDriver, explainPrefix, ident } from './driver.ts'
+import type { Statement } from '../../../shared/types.ts'
 
 const st = (sql: string, start = 0): Statement => ({ sql, start, end: start + sql.length })
 
@@ -8,11 +8,13 @@ const st = (sql: string, start = 0): Statement => ({ sql, start, end: start + sq
 function driverWith(answer: (sql: string) => object) {
   const d = new PostgresDriver({ type: 'postgres', database: 'app' })
   const query = vi.fn(async (q: string | { text: string }) => answer(typeof q === 'string' ? q : q.text))
-  const session = { client: { query, processID: 42 }, schema: null as string | null, notices: [] as string[], busy: false }
+  const tx = { status: 'I' }
+  const client = { query, processID: 42, getTransactionStatus: () => tx.status }
+  const session = { client, schema: null as string | null, notices: [] as string[], busy: false }
   vi.spyOn(d, 'session').mockResolvedValue(session as never)
   vi.spyOn(d, 'cursorQuery').mockImplementation(async (_client, sql) => answer(sql) as never)
-  vi.spyOn(d, 'typeName').mockImplementation(async (_db, oid) => (oid === 23 ? 'int4' : 'text'))
-  return { d, query, session }
+  vi.spyOn(d, 'typeName').mockImplementation(async (_db, oid) => (oid === 23 ? 'int4' : oid === 114 ? 'json' : 'text'))
+  return { d, query, session, tx }
 }
 
 describe('ident', () => {
@@ -82,6 +84,67 @@ describe('PostgresDriver.run', () => {
     session.busy = true
     expect(await d.cancel('app')).toBe(true)
     expect(q).toHaveBeenCalledWith('app', 'select pg_cancel_backend($1)', [42])
+  })
+})
+
+describe('PostgresDriver.run with explain', () => {
+  const plan = {
+    fields: [{ name: 'QUERY PLAN', dataTypeID: 114 }],
+    rows: [['[{"Plan":{"Node Type":"Seq Scan","Relation Name":"t"}}]']],
+    command: 'EXPLAIN',
+    rowCount: 1,
+  }
+
+  it('builds the EXPLAIN prefix, and leaves an EXPLAIN alone', () => {
+    expect(explainPrefix('select 1', 'plan')).toBe('EXPLAIN (FORMAT JSON) ')
+    expect(explainPrefix('select 1', 'analyze')).toBe('EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) ')
+    expect(explainPrefix('  explain select 1', 'analyze')).toBe('')
+    expect(explainPrefix('select 1', undefined)).toBe('')
+  })
+
+  it('wraps the statement, through a cursor, and marks the result', async () => {
+    const { d, query } = driverWith(() => plan)
+    const [r] = await d.run('app', undefined, [st('update t set a = 1')], 10, 'plan')
+    expect(d.cursorQuery).toHaveBeenCalledWith(expect.anything(), 'EXPLAIN (FORMAT JSON) update t set a = 1', 10)
+    expect(query).not.toHaveBeenCalled() // no transaction for a plain EXPLAIN
+    expect(r).toMatchObject({ kind: 'rows', explain: 'plan', sql: 'update t set a = 1' })
+    // the raw output, plus its parsed tree
+    expect(r).toMatchObject({
+      rows: [['[{"Plan":{"Node Type":"Seq Scan","Relation Name":"t"}}]']],
+      plan: { root: { title: 'Seq Scan on t' } },
+    })
+  })
+
+  it('runs ANALYZE in a transaction rolled back afterwards, even when it fails', async () => {
+    const { d, query } = driverWith((sql) => {
+      if (sql.includes('boom')) throw Object.assign(new Error('syntax error'), { position: '48' })
+      return plan
+    })
+    await d.run('app', undefined, [st('delete from t')], 10, 'analyze')
+    expect(query.mock.calls.map(([q]) => q)).toEqual(['begin', 'rollback'])
+    const [r] = await d.run('app', undefined, [st('select boom')], 10, 'analyze')
+    expect(query.mock.calls.map(([q]) => q).slice(2)).toEqual(['begin', 'rollback'])
+    // position given in the wrapped text, brought back into the statement
+    expect(r).toMatchObject({
+      kind: 'error',
+      explain: 'analyze',
+      error: { position: 48 - 'EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) '.length },
+    })
+  })
+
+  it("uses a savepoint inside the user's transaction, and nothing in a failed one", async () => {
+    const { d, query, tx } = driverWith(() => plan)
+    tx.status = 'T'
+    await d.run('app', undefined, [st('delete from t')], 10, 'analyze')
+    expect(query.mock.calls.map(([q]) => q)).toEqual([
+      'savepoint webgrip_explain',
+      'rollback to savepoint webgrip_explain',
+      'release savepoint webgrip_explain',
+    ])
+    query.mockClear()
+    tx.status = 'E'
+    await d.run('app', undefined, [st('delete from t')], 10, 'analyze')
+    expect(query).not.toHaveBeenCalled()
   })
 })
 

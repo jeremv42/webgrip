@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createApp } from './app.ts'
 import { unseal } from './vault.ts'
 import type { Driver, DriverConfig } from './drivers/types.ts'
-import type { PublicConnection, Statement } from '../shared/types.ts'
+import type { ExplainMode, PublicConnection, Statement } from '../shared/types.ts'
 
 // A driver that records what the API asks of it
 function fakeDriver(cfg: DriverConfig) {
@@ -21,8 +21,9 @@ function fakeDriver(cfg: DriverConfig) {
     columns: vi.fn(async () => []),
     completion: vi.fn(async () => ({ current: null, schemas: [], tables: [], functions: [] })),
     describe: vi.fn(async (db?: string) => ({ engine: 'Fake', version: '1', database: db ?? '', tables: [] })),
-    run: vi.fn(async (_db: string | undefined, _schema: string | undefined, statements: Statement[], _maxRows: number) =>
-      statements.map((st) => ({ ...st, kind: 'command' as const, command: 'OK', ms: 1 })),
+    run: vi.fn(
+      async (_db: string | undefined, _schema: string | undefined, statements: Statement[], _maxRows: number, _explain?: ExplainMode) =>
+        statements.map((st) => ({ ...st, kind: 'command' as const, command: 'OK', ms: 1 })),
     ),
     cancel: vi.fn(async () => true),
     close: vi.fn(async () => {}),
@@ -215,12 +216,20 @@ describe('database routes', () => {
     const pg = await saveConn({ user: 'bob' })
     const { body } = await call('POST', `/c/${pg.id}/query`, { sql: 'select `a;b`; select 2', db: 'app', maxRows: 10 ** 9 })
     expect(body.results.map((r: { sql: string }) => r.sql)).toEqual(['select `a', 'b`', 'select 2'])
-    expect(made[0].run).toHaveBeenLastCalledWith('app', undefined, expect.any(Array), 100000)
+    expect(made[0].run).toHaveBeenLastCalledWith('app', undefined, expect.any(Array), 100000, undefined)
 
     const my = await saveConn({ user: 'bob', type: 'mariadb' })
     await call('POST', `/c/${my.id}/query`, { sql: 'select `a;b`; select 2', maxRows: 0 })
     expect(made[1].run.mock.lastCall?.[2].map((s) => s.sql)).toEqual(['select `a;b`', 'select 2'])
     expect(made[1].run.mock.lastCall?.[3]).toBe(500) // 0 = default
+  })
+
+  it('forwards a valid explain mode only', async () => {
+    const c = await saveConn({ user: 'bob' })
+    await call('POST', `/c/${c.id}/query`, { sql: 'select 1', explain: 'analyze' })
+    expect(made[0].run.mock.lastCall?.[4]).toBe('analyze')
+    await call('POST', `/c/${c.id}/query`, { sql: 'select 1', explain: 'drop' })
+    expect(made[0].run.mock.lastCall?.[4]).toBeUndefined()
   })
 
   it('does not call the driver for an empty script', async () => {

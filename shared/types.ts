@@ -125,12 +125,48 @@ export interface QueryError {
   position?: number
 }
 
+// EXPLAIN (estimated plan) or EXPLAIN ANALYZE (runs the statement, then rolls it back)
+export type ExplainMode = 'plan' | 'analyze'
+
 interface Timed {
   ms: number
   notices?: string[]
+  // set when the statement was wrapped in EXPLAIN by the API
+  explain?: ExplainMode
 }
-export type RowsResult = Statement & Timed & { kind: 'rows'; columns: ResultColumn[]; rows: Cell[][]; truncated: boolean; total?: number }
+// `plan`: the result read as an execution plan (EXPLAIN output), parsed by the driver
+export type RowsResult = Statement &
+  Timed & { kind: 'rows'; columns: ResultColumn[]; rows: Cell[][]; truncated: boolean; total?: number; plan?: Plan }
 export type CommandResult = Statement & Timed & { kind: 'command'; command?: string; affected?: number; info?: string }
 export type ErrorResult = Statement & Timed & { kind: 'error'; error: QueryError }
-export type SkippedResult = Statement & { kind: 'skipped'; ms?: undefined; notices?: undefined }
+export type SkippedResult = Statement & { kind: 'skipped'; ms?: undefined; notices?: undefined; explain?: undefined }
 export type StatementResult = RowsResult | CommandResult | ErrorResult | SkippedResult
+
+// ---- execution plans: every engine's EXPLAIN output, normalized by its driver for the plan view ----
+export interface PlanNode {
+  title: string
+  // "Key: value" lines (conditions, sort keys, buffers…)
+  details: string[]
+  // estimated rows (all loops)
+  estRows?: number
+  // actual rows (all loops)
+  rows?: number
+  loops?: number
+  // the engine's total cost (inclusive)
+  cost?: number
+  // actual time in ms, inclusive and exclusive of the children (all loops)
+  time?: number
+  self?: number
+  // cost of the node alone, used to rank nodes when there is no timing
+  selfCost?: number
+  children: PlanNode[]
+}
+
+export interface Plan {
+  analyze: boolean
+  root: PlanNode
+  // summary lines: planning / execution time, triggers…
+  summary: string[]
+  // total of the measure used for the bars (time if analyzed, else cost)
+  total: number
+}

@@ -22,7 +22,7 @@ import MysqlWorker from '../sql/mysql.worker.ts?worker'
 import type { CompletionService, ICompletionItem } from 'monaco-sql-languages/esm/monaco.contribution.js'
 import { quoteIdent } from '../api.ts'
 import { splitSql } from '../../../shared/splitSql.ts'
-import type { CompletionInfo, CompletionTable, Dialect } from '../../../shared/types.ts'
+import type { CompletionInfo, CompletionTable, Dialect, ExplainMode } from '../../../shared/types.ts'
 import { dottedName, insertColumns, makeIndex, splitName, textSources, visibleSources, type Entity, type Source } from '../sql/sources.ts'
 
 self.MonacoEnvironment = { getWorker: () => new EditorWorker() }
@@ -45,6 +45,8 @@ export interface RunRequest {
   sql: string
   // offset of `sql` in the editor's text
   offset: number
+  // wrap each statement in EXPLAIN (or EXPLAIN ANALYZE)
+  explain?: ExplainMode
 }
 
 const langId = (dialect?: Dialect) => (dialect === 'mariadb' ? LanguageIdEnum.MYSQL : LanguageIdEnum.PG)
@@ -365,11 +367,11 @@ const selectRange = (from: number, to: number) => {
 }
 
 // Selection if any, otherwise the statement under the cursor.
-function runCurrent() {
+function runCurrent(explain?: ExplainMode) {
   const sel = editor.getSelection()
   if (!sel) return
   if (!sel.isEmpty()) {
-    emit('run', { sql: model.getValueInRange(sel), offset: model.getOffsetAt(sel.getStartPosition()) })
+    emit('run', { sql: model.getValueInRange(sel), offset: model.getOffsetAt(sel.getStartPosition()), explain })
     return
   }
   const stmts = splitSql(model.getValue(), props.dialect)
@@ -378,7 +380,7 @@ function runCurrent() {
   const st = stmts.find((s) => pos >= s.start && pos <= s.end + 1) || stmts.findLast((s) => s.end < pos) || stmts[0]
   if (st) {
     selectRange(st.start, st.end)
-    emit('run', { sql: st.sql, offset: st.start })
+    emit('run', { sql: st.sql, offset: st.start, explain })
   }
 }
 
@@ -407,8 +409,25 @@ onMounted(() => {
     // the context menu would otherwise live in a shadow root, out of reach of the CSS Vite injects in <head>
     useShadowDOM: false,
   })
-  editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, runCurrent)
+  editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => runCurrent())
   editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.Enter, runAll)
+  // (not Ctrl+Alt+E: that is AltGr+E, the € sign, on many keyboards)
+  editor.addAction({
+    id: 'webgrip.explain',
+    label: 'Explain Plan',
+    keybindings: [monaco.KeyMod.Alt | monaco.KeyCode.KeyE],
+    contextMenuGroupId: '1_run',
+    contextMenuOrder: 1,
+    run: () => runCurrent('plan'),
+  })
+  editor.addAction({
+    id: 'webgrip.explainAnalyze',
+    label: 'Explain Analyze (runs the statement, then rolls it back)',
+    keybindings: [monaco.KeyMod.Alt | monaco.KeyMod.Shift | monaco.KeyCode.KeyE],
+    contextMenuGroupId: '1_run',
+    contextMenuOrder: 2,
+    run: () => runCurrent('analyze'),
+  })
   // (the editor's event only fires for the document on screen)
   editor.onDidChangeModelContent(() => {
     const v = model.getValue()
@@ -443,6 +462,7 @@ watch(
 
 defineExpose({
   runCurrent: () => editor && runCurrent(),
+  explain: (mode: ExplainMode) => editor && runCurrent(mode),
   runAll: () => editor && runAll(),
   focus: () => editor?.focus(),
   // a closed tab: drop its model

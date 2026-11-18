@@ -1,26 +1,33 @@
 import pg from 'pg'
 import type { CustomTypesConfig, DatabaseError, FieldDef, QueryResultRow } from 'pg'
 import Cursor from 'pg-cursor'
-import { groupBy } from '../describe.ts'
+import { groupBy } from '../../describe.ts'
 import type {
   Cell,
   ColumnInfo,
   CompletionInfo,
   CompletionTable,
+  ExplainMode,
   SchemaDescription,
   Statement,
   StatementResult,
   TableInfo,
   TableKind,
-} from '../../shared/types.ts'
-import type { Driver, DriverConfig } from './types.ts'
+} from '../../../shared/types.ts'
+import type { Driver, DriverConfig } from '../types.ts'
+import { planOf } from './plan.ts'
 
 // Return every value as the raw text sent by the server (no Date/JSON/int8 conversion).
 const rawTypes: CustomTypesConfig = { getTypeParser: () => (v: string) => v }
 const ROW_STATEMENT = /^\s*(select|with|values|table|show|explain|fetch)\b/i
+const EXPLAIN_STATEMENT = /^\s*explain\b/i
 const KINDS: Record<string, TableKind> = { r: 'table', p: 'table', v: 'view', m: 'matview', f: 'foreign' }
 
 export const ident = (s: string) => '"' + String(s).replace(/"/g, '""') + '"'
+
+// The EXPLAIN put in front of a statement (none when it already is an EXPLAIN)
+export const explainPrefix = (sql: string, mode?: ExplainMode) =>
+  !mode || EXPLAIN_STATEMENT.test(sql) ? '' : `EXPLAIN (${mode === 'analyze' ? 'ANALYZE, BUFFERS, ' : ''}FORMAT JSON) `
 
 // processID (the backend's pid, set once connected) is missing from @types/pg
 type BackendClient = pg.Client & { processID: number }
@@ -266,7 +273,7 @@ export class PostgresDriver implements Driver {
     return s
   }
 
-  async run(db: string | undefined, schema: string | undefined, statements: Statement[], maxRows: number) {
+  async run(db: string | undefined, schema: string | undefined, statements: Statement[], maxRows: number, explain?: ExplainMode) {
     db ||= this.defaultDb()
     const s = await this.session(db)
     if (s.busy) throw new Error('A query is already running on this database')
@@ -284,33 +291,58 @@ export class PostgresDriver implements Driver {
           continue
         }
         s.notices = []
+        const prefix = explainPrefix(st.sql, explain)
+        const sql = prefix + st.sql
+        const mode = prefix ? { explain } : {}
         const t0 = performance.now()
+        let undo: (() => Promise<void>) | null = null
         try {
-          const r = ROW_STATEMENT.test(st.sql)
-            ? await this.cursorQuery(s.client, st.sql, maxRows)
-            : await s.client.query<Cell[]>({ text: st.sql, rowMode: 'array' })
-          results.push({ ...st, ...(await this.format(db, r, maxRows)), ms: performance.now() - t0, notices: s.notices })
+          // (a failure here, e.g. in an aborted transaction, is the statement's error: it is not run)
+          if (prefix && explain === 'analyze') undo = await this.rollbackGuard(s.client)
+          const r = ROW_STATEMENT.test(sql)
+            ? await this.cursorQuery(s.client, sql, maxRows)
+            : await s.client.query<Cell[]>({ text: sql, rowMode: 'array' })
+          results.push({ ...st, ...(await this.format(db, r, maxRows)), ms: performance.now() - t0, notices: s.notices, ...mode })
         } catch (err) {
           const e = err as DatabaseError
+          const position = e.position ? Number(e.position) - prefix.length : 0
           failed = true
           results.push({
             ...st,
             kind: 'error',
             ms: performance.now() - t0,
             notices: s.notices,
+            ...mode,
             error: {
               message: e.message,
               detail: e.detail,
               hint: e.hint,
               code: e.code,
-              position: e.position ? Number(e.position) : undefined,
+              position: position > 0 ? position : undefined,
             },
           })
+        } finally {
+          await undo?.()
         }
       }
       return results
     } finally {
       s.busy = false
+    }
+  }
+
+  // EXPLAIN ANALYZE runs the statement: open a transaction (or a savepoint inside the user's own) and return what undoes it.
+  async rollbackGuard(client: pg.Client) {
+    const status = client.getTransactionStatus()
+    if (status === 'E') return null // failed transaction: the statement will be refused anyway
+    const undo = status === 'T' ? ['rollback to savepoint webgrip_explain', 'release savepoint webgrip_explain'] : ['rollback']
+    await client.query(status === 'T' ? 'savepoint webgrip_explain' : 'begin')
+    return async () => {
+      try {
+        for (const sql of undo) await client.query(sql)
+      } catch {
+        /* connection lost: the server rolls back anyway */
+      }
     }
   }
 
@@ -330,7 +362,10 @@ export class PostgresDriver implements Driver {
       const columns = []
       for (const f of r.fields) columns.push({ name: f.name, type: await this.typeName(db, f.dataTypeID) })
       const truncated = r.rows.length > maxRows
-      return { kind: 'rows' as const, columns, rows: truncated ? r.rows.slice(0, maxRows) : r.rows, truncated }
+      const rows = truncated ? r.rows.slice(0, maxRows) : r.rows
+      // an EXPLAIN (FORMAT JSON) result, ours or typed by the user: also give it parsed
+      const plan = planOf(columns, rows)
+      return { kind: 'rows' as const, columns, rows, truncated, ...(plan && { plan }) }
     }
     return { kind: 'command' as const, command: r.command, affected: r.rowCount ?? undefined }
   }

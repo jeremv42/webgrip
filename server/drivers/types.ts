@@ -2,6 +2,7 @@ import type {
   ColumnInfo,
   CompletionInfo,
   ConnectionConfig,
+  ExplainMode,
   SchemaDescription,
   Statement,
   StatementResult,
@@ -22,7 +23,14 @@ export interface Driver {
   completion(db?: string, schema?: string): Promise<CompletionInfo>
   describe(db?: string, schema?: string): Promise<SchemaDescription>
   // Runs the statements in order on the database's dedicated session; stops at the first error.
-  run(db: string | undefined, schema: string | undefined, statements: Statement[], maxRows: number): Promise<StatementResult[]>
+  // With `explain`, each statement is wrapped in EXPLAIN; ANALYZE runs it in a transaction (or savepoint) rolled back afterwards.
+  run(
+    db: string | undefined,
+    schema: string | undefined,
+    statements: Statement[],
+    maxRows: number,
+    explain?: ExplainMode,
+  ): Promise<StatementResult[]>
   cancel(db?: string): Promise<boolean>
   close(): Promise<void>
 }

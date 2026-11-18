@@ -10,6 +10,7 @@ A mini web DataGrip in TypeScript: Node (Express, `pg`, `mysql2`) + Vue 3 / Vuet
   - **Ctrl+Shift+Enter**: the whole script
 - Several editor tabs per connection ("Console N"): double-click to rename, middle click or × to close; each keeps its text, undo history, position and results
 - One result tab per statement; stops at the first error (the cursor is placed on the error when Postgres gives its position)
+- **Explain** (Alt+E) / **Analyze** (Alt+Shift+E), also in the editor's context menu: plan of the statement under the cursor, shown as a tree with each node's share of the time (or cost), actual vs estimated rows (misestimates flagged), loops and details; a Plan / Raw toggle shows the engine's output instead (the choice is remembered). Analyze runs the statement inside a transaction (or a savepoint, in an open transaction) rolled back afterwards, so an `UPDATE`/`DELETE` changes nothing (except non-transactional MySQL tables and sequences). A hand-written `EXPLAIN (FORMAT JSON)` / `EXPLAIN FORMAT=JSON` gets the same view
 - Grid: sort by column, distinct NULLs, double-click on a cell = full value (indented JSON), TSV copy
 - One dedicated session per database for the editor (`BEGIN`/`SET`/temporary tables persist between runs); Cancel button (`pg_cancel_backend` / `KILL QUERY`)
 - Row limit (100 to 20,000): extra rows are never loaded (cursor on Postgres, streaming on MariaDB)

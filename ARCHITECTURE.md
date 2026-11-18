@@ -33,8 +33,13 @@ webgrip/
 │   ├── describe.ts            Structure export as Markdown (to paste into a chat)
 │   └── drivers/
 │       ├── types.ts           Common Driver interface
-│       ├── postgres.ts        PostgresDriver
-│       └── mariadb.ts         MariadbDriver
+│       ├── plan.ts            Helpers shared by the plan parsers
+│       ├── postgres/
+│       │   ├── driver.ts      PostgresDriver
+│       │   └── plan.ts        EXPLAIN (FORMAT JSON) → plan tree
+│       └── mariadb/
+│           ├── driver.ts      MariadbDriver
+│           └── plan.ts        EXPLAIN / ANALYZE FORMAT=JSON and MySQL's text tree → plan tree
 ├── shared/
 │   ├── types.ts               Types exchanged as JSON between the API and the SPA (connections, results, completion…)
 │   └── splitSql.ts            Splits a SQL script into statements (used by the server AND the editor)
@@ -53,14 +58,15 @@ webgrip/
 │       │   ├── DbTree.vue             Tree databases → schemas → tables → columns (loaded on demand)
 │       │   ├── EditorTabs.vue         Editor tab bar (add, rename, close)
 │       │   ├── SqlEditor.vue          Monaco wrapper (v-model, one model per tab, Ctrl+Enter, Ctrl+Shift+Enter) and completion
-│       │   ├── ResultPanel.vue        One tab per executed statement (rows, command, error, skipped)
+│       │   ├── ResultPanel.vue        One tab per executed statement (rows, plan, command, error, skipped)
+│       │   ├── PlanView.vue           Plan / Raw toggle: tree with self time / cost share, actual vs estimated rows, details; or the engine's output
 │       │   └── ResultGrid.vue         HTML grid: sorting, NULL, full value on double-click, TSV copy
 │       └── sql/
 │           ├── sources.ts             Completion without Monaco: names, schema index, tables read by the statement
 │           ├── pgsql.worker.ts        Entry point of the PostgreSQL parser worker
 │           └── mysql.worker.ts        Entry point of the MySQL/MariaDB parser worker
 ├── patches/                   patch-package fixes of dependencies
-├── **/*.test.ts               Vitest tests, next to the tested code
+├── **/*.test.ts               Vitest tests, next to the tested code (plan parsers: real EXPLAIN outputs in plan.fixtures.json)
 ├── data/connections.json      Saved connections, encrypted (created at run time, ignored by git)
 ├── .env                       WEBGRIP_PASSWORD, WEBGRIP_SECRET (ignored by git; template: .env.example)
 ├── dist/                      Front-end build (`npm run build`)
@@ -100,7 +106,7 @@ browser ──► Vite :5180 ──(/api/*)──► Express API 127.0.0.1:3070 
 | GET | `/api/c/:id/columns?db=&schema=&table=` | Columns: name, type, not null, primary key |
 | GET | `/api/c/:id/completion?db=&schema=` | `{ current, schemas, tables: [{ schema, name, kind, columns: [{ name, type, pk }] }], functions }` for completion (every user schema/database) |
 | GET | `/api/c/:id/describe?db=&schema=` | `{ markdown }`: engine, version, tables/views with columns, keys, foreign keys and indexes (structure only, no data) |
-| POST | `/api/c/:id/query` | `{ db, schema, sql, maxRows }` → `{ results: [...] }` |
+| POST | `/api/c/:id/query` | `{ db, schema, sql, maxRows, explain? }` → `{ results: [...] }` (`explain`: `plan` or `analyze`) |
 | POST | `/api/c/:id/cancel` | `{ db }`: cancels the running query |
 
 Every route but `/api/login` requires the session cookie (else `401 { error }`).
@@ -113,7 +119,7 @@ Errors are returned as `4xx` with `{ error }`. SQL errors, however, are part of 
 ```
 hasSchemas
 test() · databases() · schemas(db) · tables(db, schema) · columns(db, schema, table) · completion(db, schema)
-run(db, schema, statements, maxRows) · cancel(db) · close()
+run(db, schema, statements, maxRows, explain?) · cancel(db) · close()
 ```
 
 Each driver handles two kinds of connections:
@@ -124,13 +130,14 @@ Each driver handles two kinds of connections:
 Specifics:
 
 - **Postgres**: values are returned as the server sends them in text (no conversion to `Date`, number or JSON), which keeps dates, `numeric`, `int8` and `bytea` exact. Statements that return rows (`SELECT`, `WITH`, `VALUES`, `SHOW`, `EXPLAIN`…) go through a cursor; the others through a simple query. The chosen schema is applied with `SET search_path`. `NOTICE`s are collected per statement. Type names come from `pg_type` (cached).
+- **EXPLAIN**: with `explain`, each statement (unless it already is an EXPLAIN) gets a prefix: Postgres `EXPLAIN ([ANALYZE, BUFFERS, ]FORMAT JSON)`, MySQL/MariaDB `EXPLAIN FORMAT=JSON`, and for ANALYZE `ANALYZE FORMAT=JSON` (MariaDB) or `EXPLAIN ANALYZE` (MySQL, text tree only). ANALYZE runs the statement, so the driver first opens a transaction (`BEGIN` … `ROLLBACK`), or a savepoint when the session is already in one (Postgres: `getTransactionStatus()`; MySQL: the `SERVER_STATUS_IN_TRANS` flag of a `DO 0`). A failure there (aborted transaction) is the statement's error, and the statement is not run. Postgres error positions are shifted back by the prefix length. The result carries `explain`. Any result that is an EXPLAIN output (ours or typed by the user) also carries `plan`, parsed by the driver (see Plans below), next to the raw rows.
 - **MariaDB**: options `dateStrings`, `bigNumberStrings`, `jsonStrings` keep textual values; BLOBs are converted to `0x…`. The session is opened directly on the chosen database. Warnings are read with `SHOW WARNINGS`.
 
 ### Result format
 
 ```js
-{ sql, start, end, ms, notices,
-  kind: 'rows',    columns: [{ name, type }], rows: [[...]], truncated, total? }
+{ sql, start, end, ms, notices, explain?,
+  kind: 'rows',    columns: [{ name, type }], rows: [[...]], truncated, total?, plan? }
 | { kind: 'command', command, affected, info? }
 | { kind: 'error',   error: { message, detail?, hint?, code?, position? } }
 | { kind: 'skipped' }            // after an error, the following statements are not run
@@ -161,6 +168,7 @@ A single module, imported by the server (to run statement by statement) and by t
 - **Editor tabs**: `App.vue` holds the current connection's tabs (`tabs.ts`) and each tab's results, in memory only. `SqlEditor` receives the tab id (`docId`) and keeps one Monaco model per tab: text, undo history, cursor and scroll belong to each tab. A run stores its results in the tab that started it, even if the user has switched to another one meanwhile. All runs go through the same database session, one at a time.
 - **Execution flow**: `SqlEditor` emits `run({ sql, offset })` (selection, statement under the cursor or whole script) → `App.vue` calls `/query` with the current database and schema → `ResultPanel` shows one tab per result and opens the first error if there is one.
 - **Tree** (`DbTree.vue`): nodes loaded when opened, rendered flat (computed indentation) to stay light; a click on a database/schema changes the editor's context, a double-click on a table appends and runs `SELECT * … LIMIT n`.
+- **Plans**: each driver's `planOf(columns, rows)` (`server/drivers/<engine>/plan.ts`) recognizes a plan by its single cell (Postgres: `QUERY PLAN` json; MySQL/MariaDB: `EXPLAIN` / `ANALYZE` JSON or `->` tree) and normalizes it into the shared `Plan` type (`shared/types.ts`): title, details, estimated / actual rows over all loops, cost, inclusive and exclusive time. Postgres times and costs are inclusive (exclusive = node − children); MySQL/MariaDB JSON gives each table or sort its own figures and the query block its total, so containers are rolled up from their children. `PlanView.vue` switches between this tree and the raw output (JSON indented), the choice kept in `localStorage`. The bars show each node's exclusive share of the total; a ×10 gap between actual and estimated rows is flagged (except a shortfall under a LIMIT).
 - **Grid** (`ResultGrid.vue`): a plain HTML `<table>` (sticky header and row numbers), rather than a `v-data-table`, to keep control of rendering and density; the server-side row limit bounds its size.
 
 ## Security

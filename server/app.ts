@@ -3,8 +3,8 @@ import type { Request, Response } from 'express'
 import fs from 'node:fs'
 import path from 'node:path'
 import crypto from 'node:crypto'
-import { PostgresDriver } from './drivers/postgres.ts'
-import { MariadbDriver } from './drivers/mariadb.ts'
+import { PostgresDriver } from './drivers/postgres/driver.ts'
+import { MariadbDriver } from './drivers/mariadb/driver.ts'
 import type { Driver, DriverConfig } from './drivers/types.ts'
 import { splitSql } from '../shared/splitSql.ts'
 import { toMarkdown } from './describe.ts'
@@ -196,11 +196,12 @@ export function createApp({ dataFile, secret, password, makeDriver = defaultDriv
     '/api/c/:id/query',
     h(async (req) => {
       const d = driver(connId(req))
-      const { db, schema, sql } = req.body as { db?: string; schema?: string; sql?: string }
+      const { db, schema, sql, explain } = req.body as { db?: string; schema?: string; sql?: string; explain?: unknown }
+      const mode = explain === 'plan' || explain === 'analyze' ? explain : undefined
       const maxRows = Math.min(Math.max(Number(req.body.maxRows) || 500, 1), 100000)
       const statements = splitSql(sql || '', d.hasSchemas ? 'postgres' : 'mariadb')
       if (!statements.length) return { results: [] }
-      return { results: await d.run(db || undefined, schema || undefined, statements, maxRows) }
+      return { results: await d.run(db || undefined, schema || undefined, statements, maxRows, mode) }
     }),
   )
 

@@ -1,21 +1,34 @@
 import mysql from 'mysql2'
 import type { Connection, FieldPacket, Pool, ResultSetHeader, RowDataPacket } from 'mysql2/promise'
 import type { Connection as CallbackConnection, ConnectionOptions } from 'mysql2'
-import { groupBy } from '../describe.ts'
+import { groupBy } from '../../describe.ts'
 import type {
   Cell,
   CompletionInfo,
   CompletionTable,
+  ExplainMode,
   ResultColumn,
   SchemaDescription,
   Statement,
   StatementResult,
   TableInfo,
-} from '../../shared/types.ts'
-import type { Driver, DriverConfig } from './types.ts'
+} from '../../../shared/types.ts'
+import type { Driver, DriverConfig } from '../types.ts'
+import { planOf } from './plan.ts'
 
 const typeNames: Record<number, string> = Object.fromEntries(Object.entries(mysql.Types).map(([k, v]) => [v, k]))
 const BINARY_CHARSET = 63
+
+const SERVER_STATUS_IN_TRANS = 1
+const EXPLAIN_STATEMENT = /^\s*(explain|analyze|describe|desc)\b/i
+
+// The EXPLAIN put in front of a statement (none when it already is one). MariaDB's ANALYZE FORMAT=JSON and MySQL's
+// EXPLAIN FORMAT=JSON give a JSON tree; MySQL's EXPLAIN ANALYZE (8.0.18+) only gives an indented text tree.
+export function explainPrefix(sql: string, mode: ExplainMode | undefined, mariadb: boolean) {
+  if (!mode || EXPLAIN_STATEMENT.test(sql)) return ''
+  if (mode === 'plan') return 'EXPLAIN FORMAT=JSON '
+  return mariadb ? 'ANALYZE FORMAT=JSON ' : 'EXPLAIN ANALYZE '
+}
 
 const options = (cfg: DriverConfig, database?: string): ConnectionOptions => ({
   host: cfg.host,
@@ -53,6 +66,7 @@ export class MariadbDriver implements Driver {
   cfg: DriverConfig
   meta: Pool
   sessions = new Map<string, Session>() // db -> session used by the SQL editor
+  flavor?: Promise<boolean> // true for MariaDB, false for MySQL
 
   constructor(cfg: DriverConfig) {
     this.cfg = cfg
@@ -61,6 +75,11 @@ export class MariadbDriver implements Driver {
 
   async q<R>(sql: string, params?: unknown[]): Promise<Rows<R>> {
     return (await this.meta.query<Rows<R>>(sql, params))[0]
+  }
+
+  isMariadb() {
+    this.flavor ||= this.test().then((v) => /mariadb/i.test(v))
+    return this.flavor
   }
 
   async test() {
@@ -207,7 +226,8 @@ export class MariadbDriver implements Driver {
     return s
   }
 
-  async run(db: string | undefined, _schema: string | undefined, statements: Statement[], maxRows: number) {
+  async run(db: string | undefined, _schema: string | undefined, statements: Statement[], maxRows: number, explain?: ExplainMode) {
+    const mariadb = explain ? await this.isMariadb() : true
     const s = await this.session(db)
     if (s.busy) throw new Error('A query is already running on this database')
     s.busy = true
@@ -219,15 +239,23 @@ export class MariadbDriver implements Driver {
           results.push({ ...st, kind: 'skipped' })
           continue
         }
+        const prefix = explainPrefix(st.sql, explain, mariadb)
+        const mode = prefix ? { explain } : {}
         const t0 = performance.now()
+        let undo: (() => Promise<void>) | null = null
         try {
-          const { warnings, ...r } = await this.exec(s.conn, st.sql, maxRows)
+          if (prefix && explain === 'analyze') undo = await this.rollbackGuard(s.conn)
+          const { warnings, ...r } = await this.exec(s.conn, prefix + st.sql, maxRows)
           const notices = warnings ? await this.warnings(s.conn) : []
-          results.push({ ...st, ...r, ms: performance.now() - t0, notices })
+          // an EXPLAIN / ANALYZE result, ours or typed by the user: also give it parsed
+          const plan = r.kind === 'rows' ? planOf(r.columns, r.rows) : undefined
+          results.push({ ...st, ...r, ms: performance.now() - t0, notices, ...mode, ...(plan && { plan }) })
         } catch (err) {
           const e = err as { message: string; code?: string }
           failed = true
-          results.push({ ...st, kind: 'error', ms: performance.now() - t0, error: { message: e.message, code: e.code } })
+          results.push({ ...st, kind: 'error', ms: performance.now() - t0, ...mode, error: { message: e.message, code: e.code } })
+        } finally {
+          await undo?.()
         }
       }
       return results
@@ -275,6 +303,23 @@ export class MariadbDriver implements Driver {
             })
         })
     })
+  }
+
+  // ANALYZE runs the statement: open a transaction (or a savepoint inside the user's own) and return what undoes it.
+  // Changes to non-transactional tables (MyISAM, Aria…) cannot be undone.
+  async rollbackGuard(conn: CallbackConnection) {
+    const promised: Connection = conn.promise()
+    const [status] = await promised.query<ResultSetHeader>('do 0')
+    const inTx = status.serverStatus & SERVER_STATUS_IN_TRANS
+    const undo = inTx ? ['rollback to savepoint webgrip_explain', 'release savepoint webgrip_explain'] : ['rollback']
+    await promised.query(inTx ? 'savepoint webgrip_explain' : 'start transaction')
+    return async () => {
+      try {
+        for (const sql of undo) await promised.query(sql)
+      } catch {
+        /* connection lost: the server rolls back anyway */
+      }
+    }
   }
 
   async warnings(conn: CallbackConnection) {

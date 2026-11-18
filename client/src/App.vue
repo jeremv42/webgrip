@@ -65,6 +65,21 @@
           @click="editor?.runAll()"
           >All</v-btn
         >
+        <v-btn-group variant="tonal" density="comfortable" divided>
+          <v-btn
+            prepend-icon="mdi-file-tree"
+            :disabled="!info || running"
+            title="Estimated plan of the statement under the cursor (Alt+E)"
+            @click="editor?.explain('plan')"
+            >Explain</v-btn
+          >
+          <v-btn
+            :disabled="!info || running"
+            title="EXPLAIN ANALYZE (Alt+Shift+E): runs the statement in a transaction rolled back afterwards"
+            @click="editor?.explain('analyze')"
+            >Analyze</v-btn
+          >
+        </v-btn-group>
         <v-btn v-if="running" color="error" variant="tonal" prepend-icon="mdi-stop" @click="cancel">Cancel</v-btn>
         <v-btn
           icon="mdi-content-copy"
@@ -340,7 +355,7 @@ function setContext(ctx: TreeContext) {
 let runDb: string | null = null
 const runTab = ref('') // the tab whose query is running: its results go there, even if another tab is shown meanwhile
 async function run(
-  { sql, offset }: RunRequest,
+  { sql, offset, explain }: RunRequest,
   ctx: { db: string | null; schema: string | null } = { db: db.value, schema: schema.value },
 ) {
   if (!sql.trim() || running.value || !connId.value) return
@@ -353,6 +368,7 @@ async function run(
       db: ctx.db,
       schema: ctx.schema,
       maxRows: maxRows.value,
+      explain,
     })
     const errIdx = r.results.findIndex((x) => x.kind === 'error')
     tabResults.set(tabId, { results: r.results, active: errIdx >= 0 ? errIdx : 0 })

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { MariadbDriver, cell } from './mariadb.ts'
-import type { Statement } from '../../shared/types.ts'
+import { MariadbDriver, cell, explainPrefix } from './driver.ts'
+import type { Statement } from '../../../shared/types.ts'
 
 const st = (sql: string, start = 0): Statement => ({ sql, start, end: start + sql.length })
 
@@ -58,6 +58,41 @@ describe('MariadbDriver.run', () => {
     session.busy = true
     expect(await d.cancel('app')).toBe(true)
     expect(q).toHaveBeenCalledWith('kill query 7')
+  })
+})
+
+describe('MariadbDriver.run with explain', () => {
+  it('uses the JSON formats, and EXPLAIN ANALYZE on MySQL', () => {
+    expect(explainPrefix('select 1', 'plan', true)).toBe('EXPLAIN FORMAT=JSON ')
+    expect(explainPrefix('select 1', 'analyze', true)).toBe('ANALYZE FORMAT=JSON ')
+    expect(explainPrefix('select 1', 'analyze', false)).toBe('EXPLAIN ANALYZE ')
+    expect(explainPrefix('analyze select 1', 'analyze', true)).toBe('')
+  })
+
+  it('runs ANALYZE in a transaction, or a savepoint inside an open one, rolled back afterwards', async () => {
+    const { d, session } = driverWith(() => ({ kind: 'rows', columns: [{ name: 'ANALYZE', type: 'VAR_STRING' }], rows: [['{}']] }))
+    vi.spyOn(d, 'test').mockResolvedValue('10.11.6-MariaDB')
+    let serverStatus = 2 // autocommit, no transaction
+    const sent: string[] = []
+    const query = vi.fn(async (sql: string) => {
+      sent.push(sql)
+      return [{ serverStatus }]
+    })
+    Object.assign(session.conn, { promise: () => ({ query }) })
+    const [r] = await d.run('app', undefined, [st('update t set a = 1')], 10, 'analyze')
+    expect(d.exec).toHaveBeenCalledWith(session.conn, 'ANALYZE FORMAT=JSON update t set a = 1', 10)
+    expect(r).toMatchObject({ explain: 'analyze' })
+    expect(r).not.toHaveProperty('plan') // '{}' is no plan
+    expect(sent).toEqual(['do 0', 'start transaction', 'rollback'])
+    sent.length = 0
+    serverStatus = 3 // in a transaction
+    await d.run('app', undefined, [st('update t set a = 1')], 10, 'analyze')
+    expect(sent).toEqual([
+      'do 0',
+      'savepoint webgrip_explain',
+      'rollback to savepoint webgrip_explain',
+      'release savepoint webgrip_explain',
+    ])
   })
 })
 

@@ -12,7 +12,8 @@
         </v-tab>
       </v-tabs>
       <div v-if="current" class="flex-grow-1" style="min-height: 0">
-        <ResultGrid v-if="current.kind === 'rows'" :result="current" />
+        <PlanView v-if="current.kind === 'rows' && current.plan" :plan="current.plan" :raw="String(current.rows[0]?.[0] ?? '')" />
+        <ResultGrid v-else-if="current.kind === 'rows'" :result="current" />
         <div v-else class="pa-4 overflow-auto h-100">
           <v-alert v-if="current.kind === 'error'" type="error" variant="tonal" class="mono">
             <div style="white-space: pre-wrap">{{ current.error.message }}</div>
@@ -41,6 +42,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import ResultGrid from './ResultGrid.vue'
+import PlanView from './PlanView.vue'
 import type { StatementResult } from '../../../shared/types.ts'
 
 const props = defineProps<{ results: StatementResult[]; running: boolean; active?: number }>()
@@ -54,14 +56,16 @@ watch(
 const current = computed<StatementResult | undefined>(() => props.results[tab.value])
 
 const iconFor = (r: StatementResult) =>
-  ({
-    rows: ['mdi-table', 'primary'],
-    command: ['mdi-check', 'success'],
-    error: ['mdi-alert-circle', 'error'],
-    skipped: ['mdi-debug-step-over', 'grey'],
-  })[r.kind]
+  r.explain && r.kind === 'rows'
+    ? ['mdi-file-tree', 'primary']
+    : {
+        rows: ['mdi-table', 'primary'],
+        command: ['mdi-check', 'success'],
+        error: ['mdi-alert-circle', 'error'],
+        skipped: ['mdi-debug-step-over', 'grey'],
+      }[r.kind]
 const label = (r: StatementResult) => {
-  const s = r.sql.replace(/\s+/g, ' ')
+  const s = (r.explain === 'analyze' ? 'ANALYZE ' : r.explain ? 'EXPLAIN ' : '') + r.sql.trim().replace(/\s+/g, ' ')
   return s.length > 28 ? s.slice(0, 28) + '…' : s
 }
 </script>
