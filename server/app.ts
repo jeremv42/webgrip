@@ -7,10 +7,11 @@ import { PostgresDriver } from './drivers/postgres/driver.ts'
 import { MariadbDriver } from './drivers/mariadb/driver.ts'
 import type { Driver, DriverConfig } from './drivers/types.ts'
 import { splitSql } from '../shared/splitSql.ts'
+import { isPageable } from '../shared/pageable.ts'
 import { toMarkdown } from './describe.ts'
 import { createAuth } from './auth.ts'
 import { isSealed, seal, unseal } from './vault.ts'
-import type { ConnectionConfig, ConnectionForm, PublicConnection } from '../shared/types.ts'
+import type { ConnectionConfig, ConnectionForm, PublicConnection, SaveRequest } from '../shared/types.ts'
 
 export class HttpError extends Error {
   status: number
@@ -202,6 +203,30 @@ export function createApp({ dataFile, secret, password, makeDriver = defaultDriv
       const statements = splitSql(sql || '', d.hasSchemas ? 'postgres' : 'mariadb')
       if (!statements.length) return { results: [] }
       return { results: await d.run(db || undefined, schema || undefined, statements, maxRows, mode) }
+    }),
+  )
+
+  app.post(
+    '/api/c/:id/rows',
+    h(async (req) => {
+      const { db, schema, sql } = req.body as { db?: string; schema?: string; sql?: unknown }
+      if (typeof sql !== 'string' || !isPageable(sql)) throw new Error('Only a read-only query can fetch more rows')
+      const offset = Math.max(0, Math.floor(Number(req.body.offset) || 0))
+      const count = Math.min(Math.max(Math.floor(Number(req.body.count) || 500), 1), 100000)
+      return driver(connId(req)).page(db || undefined, schema || undefined, sql, offset, count)
+    }),
+  )
+
+  app.post(
+    '/api/c/:id/save',
+    h(async (req) => {
+      const { db, schema, target, changes } = req.body as Partial<SaveRequest>
+      if (typeof target?.table !== 'string' || typeof target.schema !== 'string' || !Array.isArray(changes) || !changes.length)
+        throw new Error('Invalid save request')
+      for (const c of changes)
+        if (!c || typeof c.key !== 'object' || typeof c.set !== 'object' || !c.key || !c.set) throw new Error('Invalid save request')
+      const updated = await driver(connId(req)).save(db || undefined, schema || undefined, target, changes)
+      return { updated }
     }),
   )
 

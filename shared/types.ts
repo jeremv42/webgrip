@@ -135,12 +135,58 @@ interface Timed {
   explain?: ExplainMode
 }
 // `plan`: the result read as an execution plan (EXPLAIN output), parsed by the driver
+// `editable`: the rows come from one table whose primary key is in the result, so their cells can be updated
 export type RowsResult = Statement &
-  Timed & { kind: 'rows'; columns: ResultColumn[]; rows: Cell[][]; truncated: boolean; total?: number; plan?: Plan }
+  Timed & {
+    kind: 'rows'
+    columns: ResultColumn[]
+    rows: Cell[][]
+    truncated: boolean
+    total?: number
+    plan?: Plan
+    editable?: EditTarget
+  }
 export type CommandResult = Statement & Timed & { kind: 'command'; command?: string; affected?: number; info?: string }
 export type ErrorResult = Statement & Timed & { kind: 'error'; error: QueryError }
 export type SkippedResult = Statement & { kind: 'skipped'; ms?: undefined; notices?: undefined; explain?: undefined }
 export type StatementResult = RowsResult | CommandResult | ErrorResult | SkippedResult
+
+// Rows after the row limit: POST /api/c/:id/rows { db, schema, sql, offset, count } runs the statement again
+// (read-only statements only, see pageable.ts) and returns `count` rows from `offset`
+export interface RowsPage {
+  rows: Cell[][]
+  // there are rows after these
+  truncated: boolean
+  // MySQL/MariaDB: the statement's total row count
+  total?: number
+}
+
+// ---- cell editing ----
+
+// The table a result's rows can be updated in
+export interface TableRef {
+  // PostgreSQL schema, MySQL/MariaDB database
+  schema: string
+  table: string
+}
+export interface EditTarget extends TableRef {
+  // for each result column, the table column it shows (null: computed, from another table, or read-only)
+  columns: (string | null)[]
+  // primary key columns of the table, all in the result
+  key: string[]
+}
+// One row to update: its primary key (values as read) and the new values, by table column name
+export interface RowChange {
+  key: Record<string, Cell>
+  set: Record<string, Cell>
+}
+// Body of POST /api/c/:id/save
+export interface SaveRequest {
+  db?: string | null
+  schema?: string | null
+  target: TableRef
+  changes: RowChange[]
+}
 
 // ---- execution plans: every engine's EXPLAIN output, normalized by its driver for the plan view ----
 export interface PlanNode {

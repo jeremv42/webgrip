@@ -87,6 +87,61 @@ describe('PostgresDriver.run', () => {
   })
 })
 
+describe('PostgresDriver.page', () => {
+  it('runs the statement again in the schema, from the offset, and tells whether more rows follow', async () => {
+    const { d, query } = driverWith(() => ({}))
+    const rows = vi.spyOn(d, 'cursorRows').mockResolvedValue([['501'], ['502'], ['503']])
+    expect(await d.page('app', 'sales', 'select * from t', 500, 2)).toEqual({ rows: [['501'], ['502']], truncated: true })
+    expect(rows).toHaveBeenCalledWith(expect.anything(), 'select * from t', 500, 3)
+    expect(query).toHaveBeenCalledWith('set search_path to "sales", public')
+    rows.mockResolvedValue([['501']])
+    expect(await d.page('app', 'sales', 'select * from t', 500, 2)).toEqual({ rows: [['501']], truncated: false })
+    await expect(d.page('app', undefined, 'update t set a = 1 returning *', 0, 2)).rejects.toThrow('read-only')
+  })
+})
+
+describe('PostgresDriver cell editing', () => {
+  const fields = [
+    { name: 'id', dataTypeID: 23, tableID: 100, columnID: 1 },
+    { name: 'note', dataTypeID: 25, tableID: 100, columnID: 2 },
+    { name: 'n', dataTypeID: 23, tableID: 0, columnID: 0 },
+  ]
+  const attributes = [
+    { rel: 100, num: 1, name: 'id', s: 'public', t: 'orders', pk: true, ro: false },
+    { rel: 100, num: 2, name: 'note', s: 'public', t: 'orders', pk: false, ro: false },
+  ]
+
+  it('marks rows read from one table with its primary key as editable', async () => {
+    const { d } = driverWith(() => ({ fields, rows: [['1', 'a', '3']], command: 'SELECT', rowCount: 1 }))
+    const q = vi.spyOn(d, 'q').mockResolvedValue(attributes)
+    const [r] = await d.run('app', undefined, [st('select id, note, 1 + 2 n from orders')], 10)
+    expect(q.mock.lastCall?.[2]).toEqual([[100]])
+    expect(r).toMatchObject({ editable: { schema: 'public', table: 'orders', columns: ['id', 'note', null], key: ['id'] } })
+  })
+
+  it('updates in a transaction, checks each row was found, and rolls back otherwise', async () => {
+    const { d, query, tx } = driverWith((sql) => ({ rowCount: sql.includes('UPDATE') ? (sql.includes('IS NULL') ? 0 : 1) : null }))
+    const target = { schema: 'sales', table: 'orders' }
+    expect(await d.save('app', undefined, target, [{ key: { id: '1', k: 'a' }, set: { note: 'x', n: null } }])).toBe(1)
+    expect(query.mock.calls).toEqual([
+      ['begin'],
+      ['UPDATE "sales"."orders" SET "note" = $1, "n" = $2 WHERE "id" = $3 AND "k" = $4', ['x', null, '1', 'a']],
+      ['commit'],
+    ])
+    query.mockClear()
+    tx.status = 'T'
+    await expect(d.save('app', undefined, target, [{ key: { id: null }, set: { note: 'x' } }])).rejects.toThrow('not found')
+    expect(query.mock.calls.map(([q]) => q)).toEqual([
+      'savepoint webgrip_save',
+      'UPDATE "sales"."orders" SET "note" = $1 WHERE "id" IS NULL',
+      'rollback to savepoint webgrip_save',
+      'release savepoint webgrip_save',
+    ])
+    tx.status = 'E'
+    await expect(d.save('app', undefined, target, [{ key: { id: '1' }, set: { note: 'x' } }])).rejects.toThrow('failed')
+  })
+})
+
 describe('PostgresDriver.run with explain', () => {
   const plan = {
     fields: [{ name: 'QUERY PLAN', dataTypeID: 114 }],

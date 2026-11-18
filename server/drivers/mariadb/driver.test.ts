@@ -96,6 +96,80 @@ describe('MariadbDriver.run with explain', () => {
   })
 })
 
+describe('MariadbDriver.exec / page', () => {
+  // a connection whose query streams `n` rows of one column
+  const streaming = (n: number) => ({
+    query: () => {
+      const handlers: Record<string, (x?: unknown) => void> = {}
+      const q = {
+        on: (ev: string, fn: (x?: unknown) => void) => ((handlers[ev] = fn), q),
+      }
+      setTimeout(() => {
+        handlers.fields([{ name: 'id', columnType: 3, characterSet: 63, schema: 'shop', orgTable: 't', orgName: 'id' }])
+        for (let i = 1; i <= n; i++) handlers.result([i])
+        handlers.end()
+      })
+      return q
+    },
+  })
+
+  it('keeps the rows after the offset, and counts them all', async () => {
+    const d = new MariadbDriver({ type: 'mariadb' })
+    drivers.push(d)
+    const r = await d.exec(streaming(10) as never, 'select id from t', 3, 5)
+    expect(r).toMatchObject({ kind: 'rows', rows: [[6], [7], [8]], truncated: true, total: 10 })
+    expect(await d.exec(streaming(10) as never, 'select id from t', 3, 8)).toMatchObject({ rows: [[9], [10]], truncated: false })
+  })
+
+  it('pages read-only statements only', async () => {
+    const { d } = driverWith(() => ({ kind: 'rows', columns: [], rows: [[6]], truncated: false, total: 6 }))
+    expect(await d.page('shop', undefined, 'select id from t', 5, 3)).toEqual({ rows: [[6]], truncated: false, total: 6 })
+    expect(d.exec).toHaveBeenCalledWith(expect.anything(), 'select id from t', 3, 5)
+    await expect(d.page('shop', undefined, 'delete from t', 0, 3)).rejects.toThrow('read-only')
+  })
+})
+
+describe('MariadbDriver cell editing', () => {
+  const src = (table: string, column: string, binary = false) => ({ db: 'shop', table, column, binary })
+
+  it('finds the table from the fields, binary and generated columns read-only', async () => {
+    const { d } = driverWith(() => ({
+      kind: 'rows',
+      columns: [{ name: 'a', type: 'LONG' }],
+      rows: [[1, '0xff', 'x', 2]],
+      sources: [src('t', 'id'), src('t', 'img', true), src('t', 'g'), src('', '')],
+    }))
+    vi.spyOn(d, 'q').mockImplementation(async (sql: string) =>
+      sql.includes('key_column_usage')
+        ? ([{ s: 'shop', t: 't', c: 'id' }] as never)
+        : ([
+            { s: 'shop', t: 't', c: 'id', k: 'PRI', extra: '' },
+            { s: 'shop', t: 't', c: 'g', k: '', extra: 'VIRTUAL GENERATED' },
+          ] as never),
+    )
+    const [r] = await d.run('shop', undefined, [st('select * from t')], 10)
+    expect(r).toMatchObject({ editable: { schema: 'shop', table: 't', columns: ['id', null, null, null], key: ['id'] } })
+    expect(r).not.toHaveProperty('sources')
+  })
+
+  it('counts matched rows, not changed ones, and rolls back when a row is missing', async () => {
+    const { d, session } = driverWith(() => ({}))
+    const sent: unknown[] = []
+    const query = vi.fn(async (sql: string, values?: unknown[]) => {
+      sent.push(values ? [sql, values] : sql)
+      if (sql === 'do 0') return [{ serverStatus: 2 }]
+      return [{ affectedRows: 0, info: values ? `Rows matched: ${values[1] === '1' ? 1 : 0}  Changed: 0  Warnings: 0` : '' }]
+    })
+    Object.assign(session.conn, { promise: () => ({ query }) })
+    const target = { schema: 'shop', table: 't' }
+    expect(await d.save('shop', undefined, target, [{ key: { id: '1' }, set: { a: 'x' } }])).toBe(1)
+    expect(sent).toEqual(['do 0', 'start transaction', ['UPDATE `shop`.`t` SET `a` = ? WHERE `id` = ?', ['x', '1']], 'commit'])
+    sent.length = 0
+    await expect(d.save('shop', undefined, target, [{ key: { id: '9' }, set: { a: 'x' } }])).rejects.toThrow('id = 9 not found')
+    expect(sent.at(-1)).toBe('rollback')
+  })
+})
+
 describe('MariadbDriver.describe', () => {
   it('rebuilds foreign keys and indexes from their columns', async () => {
     const d = new MariadbDriver({ type: 'mariadb' })

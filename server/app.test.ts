@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createApp } from './app.ts'
 import { unseal } from './vault.ts'
 import type { Driver, DriverConfig } from './drivers/types.ts'
-import type { ExplainMode, PublicConnection, Statement } from '../shared/types.ts'
+import type { ExplainMode, PublicConnection, RowChange, Statement, TableRef } from '../shared/types.ts'
 
 // A driver that records what the API asks of it
 function fakeDriver(cfg: DriverConfig) {
@@ -25,6 +25,11 @@ function fakeDriver(cfg: DriverConfig) {
       async (_db: string | undefined, _schema: string | undefined, statements: Statement[], _maxRows: number, _explain?: ExplainMode) =>
         statements.map((st) => ({ ...st, kind: 'command' as const, command: 'OK', ms: 1 })),
     ),
+    page: vi.fn(async (_db: string | undefined, _schema: string | undefined, _sql: string, offset: number, count: number) => ({
+      rows: [[offset], [offset + count - 1]],
+      truncated: true,
+    })),
+    save: vi.fn(async (_db: string | undefined, _schema: string | undefined, _target: TableRef, changes: RowChange[]) => changes.length),
     cancel: vi.fn(async () => true),
     close: vi.fn(async () => {}),
   } satisfies Driver & { cfg: DriverConfig }
@@ -236,6 +241,31 @@ describe('database routes', () => {
     const c = await saveConn({ user: 'bob' })
     expect((await call('POST', `/c/${c.id}/query`, { sql: ' -- nothing ; ' })).body).toEqual({ results: [] })
     expect(made[0].run).not.toHaveBeenCalled()
+  })
+
+  it('fetches more rows of a read-only statement only, with a clamped count', async () => {
+    const c = await saveConn({ user: 'bob' })
+    const { body } = await call('POST', `/c/${c.id}/rows`, { db: 'app', sql: 'select * from t', offset: 500, count: 10 ** 9 })
+    expect(body).toEqual({ rows: [[500], [100499]], truncated: true })
+    expect(made[0].page).toHaveBeenCalledWith('app', undefined, 'select * from t', 500, 100000)
+    const refused = await call('POST', `/c/${c.id}/rows`, { sql: 'delete from t returning *', offset: 0 })
+    expect(refused).toEqual({ status: 400, body: { error: 'Only a read-only query can fetch more rows' } })
+    expect(made[0].page).toHaveBeenCalledTimes(1)
+  })
+
+  it('forwards edited rows to the driver, and rejects a malformed save', async () => {
+    const c = await saveConn({ user: 'bob' })
+    const target = { schema: 'public', table: 'orders' }
+    const changes = [{ key: { id: '1' }, set: { note: 'x' } }]
+    expect((await call('POST', `/c/${c.id}/save`, { db: 'app', schema: '', target, changes })).body).toEqual({ updated: 1 })
+    expect(made[0].save).toHaveBeenCalledWith('app', undefined, target, changes)
+    for (const body of [
+      { target, changes: [] },
+      { target: { table: 't' }, changes },
+      { target, changes: [{ key: 1 }] },
+    ])
+      expect((await call('POST', `/c/${c.id}/save`, body)).status).toBe(400)
+    expect(made[0].save).toHaveBeenCalledTimes(1)
   })
 
   it('forwards cancel to the driver', async () => {

@@ -3,10 +3,13 @@ import type {
   CompletionInfo,
   ConnectionConfig,
   ExplainMode,
+  RowChange,
+  RowsPage,
   SchemaDescription,
   Statement,
   StatementResult,
   TableInfo,
+  TableRef,
 } from '../../shared/types.ts'
 
 // A connection may be tested before it is saved: it has no id yet, and the form may leave fields empty.
@@ -31,6 +34,11 @@ export interface Driver {
     maxRows: number,
     explain?: ExplainMode,
   ): Promise<StatementResult[]>
+  // Runs a read-only statement again and returns `count` rows from `offset` (the rows after the row limit).
+  page(db: string | undefined, schema: string | undefined, sql: string, offset: number, count: number): Promise<RowsPage>
+  // Updates edited rows on the editor session, all or nothing (inside the session's transaction if one is open);
+  // each change must hit exactly one row. Returns the number of rows updated.
+  save(db: string | undefined, schema: string | undefined, target: TableRef, changes: RowChange[]): Promise<number>
   cancel(db?: string): Promise<boolean>
   close(): Promise<void>
 }

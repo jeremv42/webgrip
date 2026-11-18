@@ -34,6 +34,7 @@ webgrip/
 │   └── drivers/
 │       ├── types.ts           Common Driver interface
 │       ├── plan.ts            Helpers shared by the plan parsers
+│       ├── edit.ts            Cell editing: the table a result can be updated in, UPDATE builder
 │       ├── postgres/
 │       │   ├── driver.ts      PostgresDriver
 │       │   └── plan.ts        EXPLAIN (FORMAT JSON) → plan tree
@@ -42,6 +43,7 @@ webgrip/
 │           └── plan.ts        EXPLAIN / ANALYZE FORMAT=JSON and MySQL's text tree → plan tree
 ├── shared/
 │   ├── types.ts               Types exchanged as JSON between the API and the SPA (connections, results, completion…)
+│   ├── pageable.ts            Whether a statement only reads (can be run again to page), leading comments skipped
 │   └── splitSql.ts            Splits a SQL script into statements (used by the server AND the editor)
 ├── client/                    Front end (Vite root)
 │   ├── index.html
@@ -49,7 +51,7 @@ webgrip/
 │       ├── main.ts            Creates the Vue + Vuetify app (theme, component defaults)
 │       ├── App.vue            Layout and global state: connection, current database/schema, execution
 │       ├── api.ts             JSON fetch, identifier quoting, small localStorage wrapper
-│       ├── grid.ts            Grid: number detection, sorting, TSV export
+│       ├── grid.ts            Grid: number detection, sorting, TSV export, visible rows, column widths
 │       ├── tabs.ts            Editor tabs: creation, closing, saving per connection
 │       ├── style.css
 │       ├── components/
@@ -60,7 +62,7 @@ webgrip/
 │       │   ├── SqlEditor.vue          Monaco wrapper (v-model, one model per tab, Ctrl+Enter, Ctrl+Shift+Enter) and completion
 │       │   ├── ResultPanel.vue        One tab per executed statement (rows, plan, command, error, skipped)
 │       │   ├── PlanView.vue           Plan / Raw toggle: tree with self time / cost share, actual vs estimated rows, details; or the engine's output
-│       │   └── ResultGrid.vue         HTML grid: sorting, NULL, full value on double-click, TSV copy
+│       │   └── ResultGrid.vue         Virtualized HTML grid: sorting, NULL, resizable columns, cell copy, cell editing, TSV copy
 │       └── sql/
 │           ├── sources.ts             Completion without Monaco: names, schema index, tables read by the statement
 │           ├── pgsql.worker.ts        Entry point of the PostgreSQL parser worker
@@ -107,6 +109,8 @@ browser ──► Vite :5180 ──(/api/*)──► Express API 127.0.0.1:3070 
 | GET | `/api/c/:id/completion?db=&schema=` | `{ current, schemas, tables: [{ schema, name, kind, columns: [{ name, type, pk }] }], functions }` for completion (every user schema/database) |
 | GET | `/api/c/:id/describe?db=&schema=` | `{ markdown }`: engine, version, tables/views with columns, keys, foreign keys and indexes (structure only, no data) |
 | POST | `/api/c/:id/query` | `{ db, schema, sql, maxRows, explain? }` → `{ results: [...] }` (`explain`: `plan` or `analyze`) |
+| POST | `/api/c/:id/rows` | `{ db, schema, sql, offset, count }` → `{ rows, truncated, total? }`: rows after the row limit (read-only statements only, `count` ≤ 100,000) |
+| POST | `/api/c/:id/save` | `{ db, schema, target: { schema, table }, changes: [{ key, set }] }` → `{ updated }`: edited rows (see Cell editing) |
 | POST | `/api/c/:id/cancel` | `{ db }`: cancels the running query |
 
 Every route but `/api/login` requires the session cookie (else `401 { error }`).
@@ -119,7 +123,7 @@ Errors are returned as `4xx` with `{ error }`. SQL errors, however, are part of 
 ```
 hasSchemas
 test() · databases() · schemas(db) · tables(db, schema) · columns(db, schema, table) · completion(db, schema)
-run(db, schema, statements, maxRows, explain?) · cancel(db) · close()
+run(db, schema, statements, maxRows, explain?) · page(db, schema, sql, offset, count) · save(db, schema, target, changes) · cancel(db) · close()
 ```
 
 Each driver handles two kinds of connections:
@@ -137,7 +141,7 @@ Specifics:
 
 ```js
 { sql, start, end, ms, notices, explain?,
-  kind: 'rows',    columns: [{ name, type }], rows: [[...]], truncated, total?, plan? }
+  kind: 'rows',    columns: [{ name, type }], rows: [[...]], truncated, total?, plan?, editable? }
 | { kind: 'command', command, affected, info? }
 | { kind: 'error',   error: { message, detail?, hint?, code?, position? } }
 | { kind: 'skipped' }            // after an error, the following statements are not run
@@ -169,7 +173,13 @@ A single module, imported by the server (to run statement by statement) and by t
 - **Execution flow**: `SqlEditor` emits `run({ sql, offset })` (selection, statement under the cursor or whole script) → `App.vue` calls `/query` with the current database and schema → `ResultPanel` shows one tab per result and opens the first error if there is one.
 - **Tree** (`DbTree.vue`): nodes loaded when opened, rendered flat (computed indentation) to stay light; a click on a database/schema changes the editor's context, a double-click on a table appends and runs `SELECT * … LIMIT n`.
 - **Plans**: each driver's `planOf(columns, rows)` (`server/drivers/<engine>/plan.ts`) recognizes a plan by its single cell (Postgres: `QUERY PLAN` json; MySQL/MariaDB: `EXPLAIN` / `ANALYZE` JSON or `->` tree) and normalizes it into the shared `Plan` type (`shared/types.ts`): title, details, estimated / actual rows over all loops, cost, inclusive and exclusive time. Postgres times and costs are inclusive (exclusive = node − children); MySQL/MariaDB JSON gives each table or sort its own figures and the query block its total, so containers are rolled up from their children. `PlanView.vue` switches between this tree and the raw output (JSON indented), the choice kept in `localStorage`. The bars show each node's exclusive share of the total; a ×10 gap between actual and estimated rows is flagged (except a shortfall under a LIMIT).
-- **Grid** (`ResultGrid.vue`): a plain HTML `<table>` (sticky header and row numbers), rather than a `v-data-table`, to keep control of rendering and density; the server-side row limit bounds its size.
+- **Grid** (`ResultGrid.vue`): a plain HTML `<table>` (sticky header and row numbers), rather than a `v-data-table`, to keep control of rendering and density.
+  - *Virtualization*: every row is exactly 24 px (one line, `nowrap`), so the rows on screen follow from `scrollTop`; only they (plus 10 above and below) are rendered, between two spacer rows of the right height. 20,000 rows render about 35 `<tr>`.
+  - *Widths*: `table-layout: fixed` with a `<colgroup>`, so widths do not change while scrolling. Each column gets the width of its header or longest value (monospace: characters × measured character width), up to 420 px; dragging a header's edge resizes it, double-clicking the edge fits the content up to 800 px.
+  - *Rows after the limit*: a truncated result of a read-only statement (`shared/pageable.ts`: `SELECT`/`WITH`/`VALUES`/`TABLE`/`SHOW` without DML, `INTO`, locking clause or sequence call) offers **Load more** / **Load all**. `POST /rows` runs the statement again on the editor session and skips the rows already shown: Postgres through a cursor read by batches of 5,000, MySQL/MariaDB while streaming. No SQL is rewritten (any `ORDER BY`, `LIMIT` or duplicate column name keeps working), at the cost of running the query again; without an `ORDER BY` the order may differ between runs. The page is appended to the result's rows (edits, keyed by row index, stay valid).
+  - *Quick filter* (debounced) keeps the rows where a shown column contains the text, case-insensitive. *Hidden columns* (Columns menu) are left out of the grid, the filter and the TSV copy; both are kept when the next result has the same column names.
+  - *Copy*: the hovered cell (tracked by delegation on `tbody`) shows a copy button when the column is at least 72 px wide and the value is not NULL.
+- **Cell editing**: the driver tells whether a result is editable (`editable`: schema, table, the table column behind each result column, primary key). Postgres gives each field's `tableID` / `columnID`, read in `pg_attribute` / `pg_index`; MySQL/MariaDB give `orgTable` / `orgName`, read in `information_schema`. `edit.ts` keeps the one table whose whole primary key is in the result, each of its columns shown once (no self-join); only its columns are editable, minus generated ones (and binary ones in MySQL, shown as hex). A failed lookup only makes the result read-only. In the grid, a double-click edits in place (Enter / Escape; Shift+double-click, multi-line or long values: a dialog with a NULL box); edits are kept per result (`WeakMap`), so switching result tabs keeps them, and drawn as pending until **Save**. Save groups them by row (`{ key: values read, set: new values }`) and `POST /save` runs parameterized `UPDATE`s on the editor session, in a transaction (or a savepoint inside the user's own, refused in a failed one); each must match exactly one row (MySQL: `Rows matched` from the info, since `affectedRows` skips unchanged rows), otherwise everything is rolled back and the edits stay pending.
 
 ## Security
 

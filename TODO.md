@@ -17,12 +17,12 @@
 ## Results
 
 - [ ] Export as TSV, JSON and `INSERT`, streamed (without loading the whole result in memory)
-- [ ] Pagination beyond the row limit, instead of truncating
-- [ ] Quick filter in the grid, column resizing and hiding
-- [ ] Cell editing (tables with a primary key): changes stay pending until a "Save" button is clicked, which generates and runs the `UPDATE`s
-- [ ] Virtualized grid, to display 20,000 rows without slowing down
-- [ ] Resizable columns with double-click to adapt to the content (with a max size)
-- [ ] Show a copy button on hover if the cell is big enough
+- [x] Pagination beyond the row limit, instead of truncating
+- [x] Quick filter in the grid, column resizing and hiding
+- [x] Cell editing (tables with a primary key): changes stay pending until a "Save" button is clicked, which generates and runs the `UPDATE`s
+- [x] Virtualized grid, to display 20,000 rows without slowing down
+- [x] Resizable columns with double-click to adapt to the content (with a max size)
+- [x] Show a copy button on hover if the cell is big enough
 
 ## Tree and metadata
 

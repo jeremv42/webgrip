@@ -13,7 +13,7 @@
       </v-tabs>
       <div v-if="current" class="flex-grow-1" style="min-height: 0">
         <PlanView v-if="current.kind === 'rows' && current.plan" :plan="current.plan" :raw="String(current.rows[0]?.[0] ?? '')" />
-        <ResultGrid v-else-if="current.kind === 'rows'" :result="current" />
+        <ResultGrid v-else-if="current.kind === 'rows'" :result="current" :save="save" :fetch-rows="fetchRows" />
         <div v-else class="pa-4 overflow-auto h-100">
           <v-alert v-if="current.kind === 'error'" type="error" variant="tonal" class="mono">
             <div style="white-space: pre-wrap">{{ current.error.message }}</div>
@@ -41,11 +41,12 @@
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import ResultGrid from './ResultGrid.vue'
+import ResultGrid, { type FetchRows, type SaveRows } from './ResultGrid.vue'
 import PlanView from './PlanView.vue'
 import type { StatementResult } from '../../../shared/types.ts'
 
-const props = defineProps<{ results: StatementResult[]; running: boolean; active?: number }>()
+// `fetchRows`: rows after the row limit; `save`: writes a result's edited rows (cell editing is off without it)
+const props = defineProps<{ results: StatementResult[]; running: boolean; active?: number; save?: SaveRows; fetchRows?: FetchRows }>()
 const tab = ref(0)
 watch(
   () => props.results,

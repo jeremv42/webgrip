@@ -8,14 +8,19 @@ import type {
   CompletionInfo,
   CompletionTable,
   ExplainMode,
+  RowChange,
+  RowsPage,
   SchemaDescription,
   Statement,
   StatementResult,
   TableInfo,
   TableKind,
+  TableRef,
 } from '../../../shared/types.ts'
 import type { Driver, DriverConfig } from '../types.ts'
 import { planOf } from './plan.ts'
+import { isPageable, stripLeadingComments } from '../../../shared/pageable.ts'
+import { checkUpdated, editTargetOf, updateOf, type ColumnSource, type SourceTable } from '../edit.ts'
 
 // Return every value as the raw text sent by the server (no Date/JSON/int8 conversion).
 const rawTypes: CustomTypesConfig = { getTypeParser: () => (v: string) => v }
@@ -279,10 +284,7 @@ export class PostgresDriver implements Driver {
     if (s.busy) throw new Error('A query is already running on this database')
     s.busy = true
     try {
-      if (schema && schema !== s.schema) {
-        await s.client.query(`set search_path to ${ident(schema)}${schema === 'public' ? '' : ', public'}`)
-        s.schema = schema
-      }
+      await this.useSchema(s, schema)
       const results: StatementResult[] = []
       let failed = false
       for (const st of statements) {
@@ -299,7 +301,7 @@ export class PostgresDriver implements Driver {
         try {
           // (a failure here, e.g. in an aborted transaction, is the statement's error: it is not run)
           if (prefix && explain === 'analyze') undo = await this.rollbackGuard(s.client)
-          const r = ROW_STATEMENT.test(sql)
+          const r = ROW_STATEMENT.test(stripLeadingComments(sql))
             ? await this.cursorQuery(s.client, sql, maxRows)
             : await s.client.query<Cell[]>({ text: sql, rowMode: 'array' })
           results.push({ ...st, ...(await this.format(db, r, maxRows)), ms: performance.now() - t0, notices: s.notices, ...mode })
@@ -328,6 +330,44 @@ export class PostgresDriver implements Driver {
       return results
     } finally {
       s.busy = false
+    }
+  }
+
+  async useSchema(s: Session, schema?: string) {
+    if (schema && schema !== s.schema) {
+      await s.client.query(`set search_path to ${ident(schema)}${schema === 'public' ? '' : ', public'}`)
+      s.schema = schema
+    }
+  }
+
+  async page(db: string | undefined, schema: string | undefined, sql: string, offset: number, count: number): Promise<RowsPage> {
+    if (!isPageable(sql)) throw new Error('Only a read-only query can fetch more rows')
+    const s = await this.session(db || this.defaultDb())
+    if (s.busy) throw new Error('A query is already running on this database')
+    s.busy = true
+    try {
+      await this.useSchema(s, schema)
+      const rows = await this.cursorRows(s.client, sql, offset, count + 1)
+      return { rows: rows.slice(0, count), truncated: rows.length > count }
+    } finally {
+      s.busy = false
+    }
+  }
+
+  // Runs the statement through a cursor, skips `offset` rows (read by batches, never all kept) and returns the next `count`.
+  async cursorRows(client: pg.Client, sql: string, offset: number, count: number): Promise<Cell[][]> {
+    const cursor = client.query(new Cursor<Cell[]>(sql, undefined, { rowMode: 'array', types: rawTypes }))
+    const read = (n: number) =>
+      new Promise<Cell[][]>((resolve, reject) => cursor.read(n, (err, rows) => (err ? reject(err) : resolve(rows))))
+    try {
+      for (let skip = offset; skip > 0;) {
+        const batch = await read(Math.min(skip, 5000))
+        if (!batch.length) return []
+        skip -= batch.length
+      }
+      return await read(count)
+    } finally {
+      await new Promise<void>((resolve) => cursor.close(() => resolve()))
     }
   }
 
@@ -365,9 +405,75 @@ export class PostgresDriver implements Driver {
       const rows = truncated ? r.rows.slice(0, maxRows) : r.rows
       // an EXPLAIN (FORMAT JSON) result, ours or typed by the user: also give it parsed
       const plan = planOf(columns, rows)
-      return { kind: 'rows' as const, columns, rows, truncated, ...(plan && { plan }) }
+      const editable = plan ? undefined : await this.editTarget(db, r.fields)
+      return { kind: 'rows' as const, columns, rows, truncated, ...(plan && { plan }), ...(editable && { editable }) }
     }
     return { kind: 'command' as const, command: r.command, affected: r.rowCount ?? undefined }
+  }
+
+  // Which table the rows can be updated in: the fields tell each column's table (oid) and column number.
+  // A failure here only makes the result read-only.
+  async editTarget(db: string, fields: FieldDef[]) {
+    const oids = [...new Set(fields.map((f) => f.tableID).filter(Boolean))]
+    if (!oids.length) return undefined
+    try {
+      const cols = await this.q<{ rel: number; num: number; name: string; s: string; t: string; pk: boolean; ro: boolean }>(
+        db,
+        `
+        select a.attrelid::int as rel, a.attnum as num, a.attname as name, n.nspname as s, c.relname as t,
+               coalesce(a.attnum = any(i.indkey), false) as pk, a.attgenerated <> '' as ro
+        from pg_attribute a
+        join pg_class c on c.oid = a.attrelid and c.relkind in ('r', 'p')
+        join pg_namespace n on n.oid = c.relnamespace
+        left join pg_index i on i.indrelid = c.oid and i.indisprimary
+        where a.attrelid = any($1::oid[]) and a.attnum > 0 and not a.attisdropped
+        order by a.attrelid, array_position(i.indkey::int2[], a.attnum)`,
+        [oids],
+      )
+      const tables = new Map<string, SourceTable>()
+      const names = new Map<string, string>() // "oid:attnum" -> column name
+      for (const c of cols) {
+        let t = tables.get(String(c.rel))
+        if (!t) tables.set(String(c.rel), (t = { schema: c.s, name: c.t, key: [], readonly: new Set() }))
+        if (c.pk) t.key.push(c.name)
+        if (c.ro) t.readonly.add(c.name)
+        names.set(`${c.rel}:${c.num}`, c.name)
+      }
+      const sources: ColumnSource[] = fields.map((f) => {
+        const column = names.get(`${f.tableID}:${f.columnID}`)
+        return column ? { table: String(f.tableID), column } : null
+      })
+      return editTargetOf(sources, tables)
+    } catch {
+      return undefined
+    }
+  }
+
+  async save(db: string | undefined, _schema: string | undefined, target: TableRef, changes: RowChange[]) {
+    const s = await this.session(db || this.defaultDb())
+    if (s.busy) throw new Error('A query is already running on this database')
+    s.busy = true
+    try {
+      const status = s.client.getTransactionStatus()
+      if (status === 'E') throw new Error('The current transaction has failed: roll it back before saving')
+      const inTx = status === 'T'
+      await s.client.query(inTx ? 'savepoint webgrip_save' : 'begin')
+      try {
+        const table = ident(target.schema) + '.' + ident(target.table)
+        for (const change of changes) {
+          const { sql, values } = updateOf(table, change, ident, (i) => '$' + i)
+          checkUpdated(change, (await s.client.query(sql, values)).rowCount ?? 0)
+        }
+        await s.client.query(inTx ? 'release savepoint webgrip_save' : 'commit')
+      } catch (e) {
+        const undo = inTx ? ['rollback to savepoint webgrip_save', 'release savepoint webgrip_save'] : ['rollback']
+        for (const sql of undo) await s.client.query(sql).catch(() => {})
+        throw e
+      }
+      return changes.length
+    } finally {
+      s.busy = false
+    }
   }
 
   async cancel(db?: string) {

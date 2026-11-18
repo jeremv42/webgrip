@@ -7,14 +7,19 @@ import type {
   CompletionInfo,
   CompletionTable,
   ExplainMode,
+  RowChange,
+  RowsPage,
   ResultColumn,
   SchemaDescription,
   Statement,
   StatementResult,
   TableInfo,
+  TableRef,
 } from '../../../shared/types.ts'
 import type { Driver, DriverConfig } from '../types.ts'
 import { planOf } from './plan.ts'
+import { isPageable } from '../../../shared/pageable.ts'
+import { checkUpdated, editTargetOf, updateOf, type ColumnSource, type SourceTable } from '../edit.ts'
 
 const typeNames: Record<number, string> = Object.fromEntries(Object.entries(mysql.Types).map(([k, v]) => [v, k]))
 const BINARY_CHARSET = 63
@@ -45,6 +50,8 @@ const options = (cfg: DriverConfig, database?: string): ConnectionOptions => ({
   connectTimeout: 10000,
 })
 
+export const ident = (s: string) => '`' + String(s).replace(/`/g, '``') + '`'
+
 export const cell = (v: unknown): Cell => (Buffer.isBuffer(v) ? '0x' + v.toString('hex') : (v as Cell))
 
 // Rows of a metadata query, typed by the caller
@@ -57,8 +64,25 @@ interface Session {
 
 const byName = <T extends { name: string }>(rows: T[]) => groupBy(rows, (r) => r.name)
 
+// The real table and column of a result column (empty when computed); binary columns are shown as hex, so read-only
+export interface FieldSource {
+  db: string
+  table: string
+  column: string
+  binary: boolean
+}
+
 type ExecResult =
-  | { kind: 'rows'; columns: ResultColumn[]; rows: Cell[][]; truncated: boolean; total: number; warnings?: number }
+  | {
+      kind: 'rows'
+      columns: ResultColumn[]
+      rows: Cell[][]
+      truncated: boolean
+      total: number
+      warnings?: number
+      // where each column comes from (database, table, column), for cell editing
+      sources?: FieldSource[]
+    }
   | { kind: 'command'; command: string; affected?: number; info?: string; warnings?: number }
 
 export class MariadbDriver implements Driver {
@@ -246,10 +270,15 @@ export class MariadbDriver implements Driver {
         try {
           if (prefix && explain === 'analyze') undo = await this.rollbackGuard(s.conn)
           const { warnings, ...r } = await this.exec(s.conn, prefix + st.sql, maxRows)
+          const ms = performance.now() - t0
           const notices = warnings ? await this.warnings(s.conn) : []
-          // an EXPLAIN / ANALYZE result, ours or typed by the user: also give it parsed
-          const plan = r.kind === 'rows' ? planOf(r.columns, r.rows) : undefined
-          results.push({ ...st, ...r, ms: performance.now() - t0, notices, ...mode, ...(plan && { plan }) })
+          if (r.kind === 'rows') {
+            const { sources, ...rows } = r
+            // an EXPLAIN / ANALYZE result, ours or typed by the user: also give it parsed
+            const plan = planOf(r.columns, r.rows)
+            const editable = plan || !sources ? undefined : await this.editTarget(sources)
+            results.push({ ...st, ...rows, ms, notices, ...mode, ...(plan && { plan }), ...(editable && { editable }) })
+          } else results.push({ ...st, ...r, ms, notices, ...mode })
         } catch (err) {
           const e = err as { message: string; code?: string }
           failed = true
@@ -264,10 +293,25 @@ export class MariadbDriver implements Driver {
     }
   }
 
-  // Streams rows so that only maxRows are kept in memory.
-  exec(conn: CallbackConnection, sql: string, maxRows: number): Promise<ExecResult> {
+  async page(db: string | undefined, _schema: string | undefined, sql: string, offset: number, count: number): Promise<RowsPage> {
+    if (!isPageable(sql)) throw new Error('Only a read-only query can fetch more rows')
+    const s = await this.session(db)
+    if (s.busy) throw new Error('A query is already running on this database')
+    s.busy = true
+    try {
+      const r = await this.exec(s.conn, sql, count, offset)
+      if (r.kind !== 'rows') throw new Error('The statement returned no rows')
+      return { rows: r.rows, truncated: r.truncated, total: r.total }
+    } finally {
+      s.busy = false
+    }
+  }
+
+  // Streams rows so that only maxRows (after `offset` skipped ones) are kept in memory.
+  exec(conn: CallbackConnection, sql: string, maxRows: number, offset = 0): Promise<ExecResult> {
     return new Promise((resolve, reject) => {
       let columns: ResultColumn[] | null = null
+      let sources: FieldSource[] = []
       const rows: Cell[][] = []
       let total = 0
       let header: ResultSetHeader | null = null
@@ -281,18 +325,25 @@ export class MariadbDriver implements Driver {
             if (type === 'BLOB' && f.characterSet !== BINARY_CHARSET) type = 'TEXT'
             return { name: f.name, type }
           })
+          sources = fields.map((f) => ({
+            db: f.schema ?? '',
+            table: f.orgTable ?? '',
+            column: f.orgName ?? '',
+            binary: f.characterSet === BINARY_CHARSET && /BLOB|STRING|BIT|GEOMETRY/.test(typeNames[f.columnType ?? -1] ?? ''),
+          }))
         })
         .on('result', (row: unknown[] | ResultSetHeader) => {
           if (!Array.isArray(row)) {
             header ||= row
             return
           }
-          if (rows.length < maxRows) rows.push(row.map(cell))
+          if (total >= offset && rows.length < maxRows) rows.push(row.map(cell))
           total++
         })
         .on('end', () => {
           const h = header as ResultSetHeader | null
-          if (columns) resolve({ kind: 'rows', columns, rows, truncated: total > maxRows, total, warnings: h?.warningStatus })
+          if (columns)
+            resolve({ kind: 'rows', columns, rows, truncated: total > offset + maxRows, total, warnings: h?.warningStatus, sources })
           else
             resolve({
               kind: 'command',
@@ -319,6 +370,76 @@ export class MariadbDriver implements Driver {
       } catch {
         /* connection lost: the server rolls back anyway */
       }
+    }
+  }
+
+  // Which table the rows can be updated in: the fields name each column's real database, table and column.
+  // A failure here only makes the result read-only.
+  async editTarget(fields: FieldSource[]) {
+    const ids = new Map<string, [string, string]>()
+    for (const f of fields) if (f.db && f.table) ids.set(JSON.stringify([f.db, f.table]), [f.db, f.table])
+    if (!ids.size) return undefined
+    try {
+      const cols = await this.q<{ s: string; t: string; c: string; k: string; extra: string }>(
+        `
+        select table_schema as s, table_name as t, column_name as c, column_key as k, extra
+        from information_schema.columns
+        where ${[...ids.values()].map(() => '(table_schema = ? and table_name = ?)').join(' or ')}
+        order by table_schema, table_name, ordinal_position`,
+        [...ids.values()].flat(),
+      )
+      const keys = await this.q<{ s: string; t: string; c: string }>(
+        `
+        select table_schema as s, table_name as t, column_name as c from information_schema.key_column_usage
+        where constraint_name = 'PRIMARY' and (${[...ids.values()].map(() => '(table_schema = ? and table_name = ?)').join(' or ')})
+        order by ordinal_position`,
+        [...ids.values()].flat(),
+      )
+      const tables = new Map<string, SourceTable>()
+      for (const c of cols) {
+        const id = JSON.stringify([c.s, c.t])
+        let t = tables.get(id)
+        if (!t) tables.set(id, (t = { schema: c.s, name: c.t, key: [], readonly: new Set() }))
+        if (/GENERATED/i.test(c.extra)) t.readonly.add(c.c)
+      }
+      for (const k of keys) tables.get(JSON.stringify([k.s, k.t]))?.key.push(k.c)
+      for (const f of fields) if (f.binary) tables.get(JSON.stringify([f.db, f.table]))?.readonly.add(f.column)
+      const sources: ColumnSource[] = fields.map((f) =>
+        f.db && f.table ? { table: JSON.stringify([f.db, f.table]), column: f.column } : null,
+      )
+      return editTargetOf(sources, tables)
+    } catch {
+      return undefined
+    }
+  }
+
+  async save(db: string | undefined, _schema: string | undefined, target: TableRef, changes: RowChange[]) {
+    const s = await this.session(db)
+    if (s.busy) throw new Error('A query is already running on this database')
+    s.busy = true
+    try {
+      const promised: Connection = s.conn.promise()
+      const [status] = await promised.query<ResultSetHeader>('do 0')
+      const inTx = status.serverStatus & SERVER_STATUS_IN_TRANS
+      await promised.query(inTx ? 'savepoint webgrip_save' : 'start transaction')
+      try {
+        const table = ident(target.schema) + '.' + ident(target.table)
+        for (const change of changes) {
+          const { sql, values } = updateOf(table, change, ident, () => '?')
+          const [r] = await promised.query<ResultSetHeader>(sql, values)
+          // affectedRows only counts rows really changed: "Rows matched" tells whether the row was found
+          const matched = /Rows matched:\s*(\d+)/.exec(r.info || '')
+          checkUpdated(change, matched ? Number(matched[1]) : r.affectedRows)
+        }
+        await promised.query(inTx ? 'release savepoint webgrip_save' : 'commit')
+      } catch (e) {
+        const undo = inTx ? ['rollback to savepoint webgrip_save', 'release savepoint webgrip_save'] : ['rollback']
+        for (const sql of undo) await promised.query(sql).catch(() => {})
+        throw e
+      }
+      return changes.length
+    } finally {
+      s.busy = false
     }
   }
 

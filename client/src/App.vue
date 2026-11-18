@@ -134,7 +134,13 @@
       </div>
       <div class="splitter" @mousedown="startResize" />
       <div class="flex-grow-1" style="min-height: 0">
-        <ResultPanel :results="results" :running="running && runTab === tabState.active" :active="activeResult" />
+        <ResultPanel
+          :results="results"
+          :running="running && runTab === tabState.active"
+          :active="activeResult"
+          :save="saveRows"
+          :fetch-rows="fetchRows"
+        />
       </div>
     </v-main>
 
@@ -155,7 +161,15 @@ import ConnectionDialog from './components/ConnectionDialog.vue'
 import LoginDialog from './components/LoginDialog.vue'
 import EditorTabs from './components/EditorTabs.vue'
 import { closeTab, loadTabs, newTab, saveTabs, type TabState } from './tabs.ts'
-import type { CompletionInfo, ConnectionInfo, PublicConnection, StatementResult } from '../../shared/types.ts'
+import type {
+  CompletionInfo,
+  ConnectionInfo,
+  PublicConnection,
+  RowChange,
+  RowsPage,
+  RowsResult,
+  StatementResult,
+} from '../../shared/types.ts'
 
 const theme = useTheme()
 const dark = computed(() => theme.global.current.value.dark)
@@ -261,7 +275,9 @@ const sqlText = computed({
     if (activeTab.value) activeTab.value.sql = v
   },
 })
-const tabResults = shallowReactive(new Map<string, { results: StatementResult[]; active: number }>())
+// ctx: the database / schema the results were read from (where their edited rows are saved)
+type RunContext = { db: string | null; schema: string | null }
+const tabResults = shallowReactive(new Map<string, { results: StatementResult[]; active: number; ctx: RunContext }>())
 const results = computed(() => tabResults.get(tabState.value.active)?.results ?? [])
 const activeResult = computed(() => tabResults.get(tabState.value.active)?.active ?? 0)
 
@@ -354,10 +370,7 @@ function setContext(ctx: TreeContext) {
 // ---- running SQL ----
 let runDb: string | null = null
 const runTab = ref('') // the tab whose query is running: its results go there, even if another tab is shown meanwhile
-async function run(
-  { sql, offset, explain }: RunRequest,
-  ctx: { db: string | null; schema: string | null } = { db: db.value, schema: schema.value },
-) {
+async function run({ sql, offset, explain }: RunRequest, ctx: RunContext = { db: db.value, schema: schema.value }) {
   if (!sql.trim() || running.value || !connId.value) return
   running.value = true
   runDb = ctx.db
@@ -371,7 +384,7 @@ async function run(
       explain,
     })
     const errIdx = r.results.findIndex((x) => x.kind === 'error')
-    tabResults.set(tabId, { results: r.results, active: errIdx >= 0 ? errIdx : 0 })
+    tabResults.set(tabId, { results: r.results, active: errIdx >= 0 ? errIdx : 0, ctx })
     const err = r.results[errIdx]
     if (err?.kind === 'error' && err.error.position && tabId === tabState.value.active)
       editor.value?.setCursor(offset + err.start + err.error.position - 1)
@@ -379,6 +392,60 @@ async function run(
     if (r.results.some((x) => x.kind === 'command' && /^(CREATE|DROP|ALTER|RENAME)/i.test(x.command || x.sql))) void loadCompletion()
   } catch (e) {
     notify(e)
+  } finally {
+    running.value = false
+  }
+}
+
+// Rows after the row limit: the statement runs again on the session it was read from, from `offset`
+async function fetchRows(result: RowsResult, offset: number, all: boolean) {
+  const tabId = tabState.value.active
+  const ctx = tabResults.get(tabId)?.ctx
+  if (!ctx || !connId.value) throw new Error('No connection')
+  if (running.value) {
+    notify(new Error('Wait for the running query to finish'))
+    throw new Error('busy')
+  }
+  running.value = true
+  runTab.value = tabId
+  try {
+    return await api.post<RowsPage>(`/c/${connId.value}/rows`, {
+      db: ctx.db,
+      schema: ctx.schema,
+      sql: result.sql,
+      offset,
+      count: all ? 100000 : maxRows.value,
+    })
+  } catch (e) {
+    notify(e)
+    throw e
+  } finally {
+    running.value = false
+  }
+}
+
+// Cell editing: runs the UPDATEs on the session the rows were read from (inside its transaction if one is open)
+async function saveRows(result: RowsResult, changes: RowChange[]) {
+  const tabId = tabState.value.active
+  const ctx = tabResults.get(tabId)?.ctx
+  if (!result.editable || !ctx || !connId.value) throw new Error('Not editable')
+  if (running.value) {
+    notify(new Error('Wait for the running query to finish'))
+    throw new Error('busy')
+  }
+  running.value = true
+  runTab.value = tabId
+  try {
+    const { updated } = await api.post<{ updated: number }>(`/c/${connId.value}/save`, {
+      db: ctx.db,
+      schema: ctx.schema,
+      target: { schema: result.editable.schema, table: result.editable.table },
+      changes,
+    })
+    flash(`${updated} row${updated === 1 ? '' : 's'} updated`)
+  } catch (e) {
+    notify(e)
+    throw e
   } finally {
     running.value = false
   }
