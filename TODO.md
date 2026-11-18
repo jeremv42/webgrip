@@ -7,7 +7,7 @@
 
 ## Editor and execution
 
-- [ ] Several editor tabs per connection
+- [x] Several editor tabs per connection
 - [ ] History of executed queries: search, insert back into the editor
 - [ ] Favorite queries / scripts saved on the server
 - [ ] Show that a transaction is open (`BEGIN` without `COMMIT`), with Commit and Rollback buttons
@@ -37,5 +37,5 @@
 ## Engineering and maintenance
 
 - [ ] Integration tests against real servers (PostgreSQL and MariaDB in Docker containers; SQLite as a file)
+- [ ] Translate everything into English (UI, docs, error messages)
 - [ ] Track `dt-sql-parser` and `monaco-sql-languages` upstream: remove `patches/` and the Monaco aliases in `vite.config.ts` once fixed there
-- [ ] Add a git remote (private GitHub repository) to back up the project

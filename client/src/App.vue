@@ -99,12 +99,21 @@
     </v-navigation-drawer>
 
     <v-main class="d-flex flex-column" style="height: 100vh">
+      <EditorTabs v-model:active="tabState.active" :tabs="tabState.tabs" @add="addTab" @close="removeTab" @rename="renameTab" />
       <div :style="{ height: editorHeight + 'px' }" class="flex-grow-0 flex-shrink-0">
-        <SqlEditor ref="editor" v-model="sqlText" :dialect="conn?.type" :completion="completion" :dark="dark" @run="run" />
+        <SqlEditor
+          ref="editor"
+          v-model="sqlText"
+          :doc-id="tabState.active"
+          :dialect="conn?.type"
+          :completion="completion"
+          :dark="dark"
+          @run="run"
+        />
       </div>
       <div class="splitter" @mousedown="startResize" />
       <div class="flex-grow-1" style="min-height: 0">
-        <ResultPanel :results="results" :running="running" :active="activeResult" />
+        <ResultPanel :results="results" :running="running && runTab === tabState.active" :active="activeResult" />
       </div>
     </v-main>
 
@@ -115,7 +124,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, nextTick, reactive } from 'vue'
+import { ref, computed, watch, onMounted, nextTick, reactive, shallowReactive } from 'vue'
 import { useTheme } from 'vuetify'
 import { api, copyText, onUnauthorized, quoteIdent, store } from './api.ts'
 import SqlEditor, { type RunRequest } from './components/SqlEditor.vue'
@@ -123,6 +132,8 @@ import DbTree, { type TableRef, type TreeContext } from './components/DbTree.vue
 import ResultPanel from './components/ResultPanel.vue'
 import ConnectionDialog from './components/ConnectionDialog.vue'
 import LoginDialog from './components/LoginDialog.vue'
+import EditorTabs from './components/EditorTabs.vue'
+import { closeTab, loadTabs, newTab, saveTabs, type TabState } from './tabs.ts'
 import type { CompletionInfo, ConnectionInfo, PublicConnection, StatementResult } from '../../shared/types.ts'
 
 const theme = useTheme()
@@ -144,9 +155,6 @@ const db = ref<string | null>(null)
 const schema = ref<string | null>(null)
 const schemas = ref<string[]>([])
 const completion = ref<Partial<CompletionInfo>>({})
-const sqlText = ref('')
-const results = ref<StatementResult[]>([])
-const activeResult = ref(0)
 const running = ref(false)
 const maxRows = ref(store.get('maxRows', 500))
 const editor = ref<InstanceType<typeof SqlEditor>>()
@@ -222,14 +230,47 @@ async function logout() {
   needLogin.value = true
 }
 
-watch(connId, (id, old) => {
-  if (old) store.set('sql.' + old, sqlText.value)
+// ---- editor tabs, per connection (results stay in memory, per tab) ----
+const tabState = ref<TabState>({ tabs: [newTab([])], active: '' })
+tabState.value.active = tabState.value.tabs[0].id
+const activeTab = computed(() => tabState.value.tabs.find((t) => t.id === tabState.value.active))
+const sqlText = computed({
+  get: () => activeTab.value?.sql ?? '',
+  set: (v: string) => {
+    if (activeTab.value) activeTab.value.sql = v
+  },
+})
+const tabResults = shallowReactive(new Map<string, { results: StatementResult[]; active: number }>())
+const results = computed(() => tabResults.get(tabState.value.active)?.results ?? [])
+const activeResult = computed(() => tabResults.get(tabState.value.active)?.active ?? 0)
+
+watch(
+  tabState,
+  (s) => {
+    if (connId.value) saveTabs(connId.value, s)
+  },
+  { deep: true },
+)
+function addTab() {
+  const t = newTab(tabState.value.tabs)
+  tabState.value.tabs.push(t)
+  tabState.value.active = t.id
+}
+function removeTab(id: string) {
+  tabState.value = closeTab(tabState.value, id)
+  tabResults.delete(id)
+  void nextTick(() => editor.value?.forget(id)) // once the editor shows another tab
+}
+function renameTab(id: string, name: string) {
+  const t = tabState.value.tabs.find((x) => x.id === id)
+  if (t) t.name = name
+}
+
+watch(connId, (id) => {
   store.set('conn', id)
-  sqlText.value = id ? store.get('sql.' + id, '') : ''
-  results.value = []
+  if (id) tabState.value = loadTabs(id)
   loadInfo()
 })
-watch(sqlText, (v) => connId.value && store.set('sql.' + connId.value, v))
 
 async function loadInfo() {
   info.value = null
@@ -291,6 +332,7 @@ function setContext(ctx: TreeContext) {
 
 // ---- running SQL ----
 let runDb: string | null = null
+const runTab = ref('') // the tab whose query is running: its results go there, even if another tab is shown meanwhile
 async function run(
   { sql, offset }: RunRequest,
   ctx: { db: string | null; schema: string | null } = { db: db.value, schema: schema.value },
@@ -298,6 +340,7 @@ async function run(
   if (!sql.trim() || running.value || !connId.value) return
   running.value = true
   runDb = ctx.db
+  const tabId = (runTab.value = tabState.value.active)
   try {
     const r = await api.post<{ results: StatementResult[] }>(`/c/${connId.value}/query`, {
       sql,
@@ -306,10 +349,10 @@ async function run(
       maxRows: maxRows.value,
     })
     const errIdx = r.results.findIndex((x) => x.kind === 'error')
-    activeResult.value = errIdx >= 0 ? errIdx : 0
-    results.value = r.results
+    tabResults.set(tabId, { results: r.results, active: errIdx >= 0 ? errIdx : 0 })
     const err = r.results[errIdx]
-    if (err?.kind === 'error' && err.error.position) editor.value?.setCursor(offset + err.start + err.error.position - 1)
+    if (err?.kind === 'error' && err.error.position && tabId === tabState.value.active)
+      editor.value?.setCursor(offset + err.start + err.error.position - 1)
     // DDL may have changed the tree / completion
     if (r.results.some((x) => x.kind === 'command' && /^(CREATE|DROP|ALTER|RENAME)/i.test(x.command || x.sql))) void loadCompletion()
   } catch (e) {

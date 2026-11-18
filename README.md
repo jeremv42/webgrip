@@ -8,6 +8,7 @@ Mini-DataGrip web en TypeScript : Node (Express, `pg`, `mysql2`) + Vue 3 / Vueti
 - Éditeur Monaco (celui de VS Code) avec un vrai parseur SQL : autocomplétion selon le contexte (tables de tous les schémas, colonnes typées, alias, sous-requêtes, CTE, mots-clés, fonctions), erreurs de syntaxe soulignées, formatage (Ctrl+Alt+F)
   - **Ctrl+Entrée** : sélection, sinon requête sous le curseur
   - **Ctrl+Maj+Entrée** : tout le script
+- Plusieurs onglets d'éditeur par connexion (« Console N ») : double-clic pour renommer, clic milieu ou × pour fermer ; chacun garde son texte, son historique d'annulation, sa position et ses résultats
 - Un onglet de résultat par requête ; arrêt à la première erreur (le curseur est placé sur l'erreur si Postgres donne la position)
 - Grille : tri par colonne, NULL distincts, double-clic sur une cellule = valeur complète (JSON indenté), copie TSV
 - Une session dédiée par base pour l'éditeur (les `BEGIN`/`SET`/tables temporaires persistent entre exécutions) ; bouton Annuler (`pg_cancel_backend` / `KILL QUERY`)

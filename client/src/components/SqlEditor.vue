@@ -317,7 +317,9 @@ for (const id of [LanguageIdEnum.PG, LanguageIdEnum.MYSQL]) {
 <script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount, watch } from 'vue'
 
-const props = withDefaults(defineProps<{ dialect?: Dialect; completion?: Partial<CompletionInfo>; dark?: boolean }>(), {
+// docId: one Monaco model per document (editor tab), so that each keeps its undo history, cursor and scroll position
+const props = withDefaults(defineProps<{ docId?: string; dialect?: Dialect; completion?: Partial<CompletionInfo>; dark?: boolean }>(), {
+  docId: '',
   dialect: 'postgres',
   completion: () => ({}),
 })
@@ -326,7 +328,34 @@ const emit = defineEmits<{ run: [RunRequest] }>()
 
 const host = ref<HTMLElement>()
 let editor: monaco.editor.IStandaloneCodeEditor
-let model: monaco.editor.ITextModel
+let model: monaco.editor.ITextModel // the current document's
+let currentDoc = ''
+const docs = new Map<string, { model: monaco.editor.ITextModel; view: monaco.editor.ICodeEditorViewState | null }>()
+
+function docModel(id: string, value: string) {
+  let doc = docs.get(id)
+  if (!doc) {
+    const m = monaco.editor.createModel(value, langId(props.dialect))
+    m.setEOL(monaco.editor.EndOfLineSequence.LF) // offsets must match the text sent to the server
+    doc = { model: m, view: null }
+    docs.set(id, doc)
+  }
+  return doc
+}
+
+// Shows another document: saves the view state (cursor, scroll) of the current one, restores the other's.
+function switchDoc(id: string, value: string) {
+  const prev = docs.get(currentDoc)
+  if (prev) prev.view = editor.saveViewState()
+  const doc = docModel(id, value)
+  model = doc.model
+  currentDoc = id
+  if (model.getLanguageId() !== langId(props.dialect)) monaco.editor.setModelLanguage(model, langId(props.dialect))
+  schemas.set(model, props.completion)
+  editor.setModel(model)
+  if (doc.view) editor.restoreViewState(doc.view)
+  if (model.getValue() !== value) setText(value)
+}
 
 const selectRange = (from: number, to: number) => {
   const a = model.getPositionAt(from),
@@ -361,8 +390,8 @@ function runAll() {
 const setText = (value: string) => editor.executeEdits('vmodel', [{ range: model.getFullModelRange(), text: value }])
 
 onMounted(() => {
-  model = monaco.editor.createModel(text.value, langId(props.dialect))
-  model.setEOL(monaco.editor.EndOfLineSequence.LF) // offsets must match the text sent to the server
+  currentDoc = props.docId
+  model = docModel(currentDoc, text.value).model
   schemas.set(model, props.completion)
   editor = monaco.editor.create(host.value!, {
     model,
@@ -380,7 +409,8 @@ onMounted(() => {
   })
   editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, runCurrent)
   editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.Enter, runAll)
-  model.onDidChangeContent(() => {
+  // (the editor's event only fires for the document on screen)
+  editor.onDidChangeModelContent(() => {
     const v = model.getValue()
     if (v !== text.value) text.value = v
   })
@@ -388,11 +418,15 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   editor?.dispose()
-  model?.dispose()
+  for (const d of docs.values()) d.model.dispose()
+  docs.clear()
 })
 
-watch(text, (v) => {
-  if (model && v !== model.getValue()) setText(v)
+// one watcher for both: when the document changes, the text that comes with it is the new document's
+watch([() => props.docId, text], ([id, v]) => {
+  if (!editor) return
+  if (id !== currentDoc) switchDoc(id, v)
+  else if (v !== model.getValue()) setText(v)
 })
 watch(
   () => props.dialect,
@@ -411,6 +445,13 @@ defineExpose({
   runCurrent: () => editor && runCurrent(),
   runAll: () => editor && runAll(),
   focus: () => editor?.focus(),
+  // a closed tab: drop its model
+  forget(id: string) {
+    const d = docs.get(id)
+    if (!d || id === currentDoc) return
+    d.model.dispose()
+    docs.delete(id)
+  },
   setCursor(pos: number) {
     pos = Math.max(0, Math.min(pos, model.getValueLength()))
     const p = model.getPositionAt(pos)

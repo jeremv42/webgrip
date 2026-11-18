@@ -45,12 +45,14 @@ webgrip/
 │       ├── App.vue            Mise en page et état global : connexion, base/schéma courants, exécution
 │       ├── api.ts             fetch JSON, quoting des identifiants, petit wrapper localStorage
 │       ├── grid.ts            Grille : détection des nombres, tri, export TSV
+│       ├── tabs.ts            Onglets d'éditeur : création, fermeture, sauvegarde par connexion
 │       ├── style.css
 │       ├── components/
 │       │   ├── LoginDialog.vue        Demande du mot de passe (affiché dès qu'une requête reçoit un 401)
 │       │   ├── ConnectionDialog.vue   Création / édition / test / suppression d'une connexion
 │       │   ├── DbTree.vue             Arbre bases → schémas → tables → colonnes (chargement à la demande)
-│       │   ├── SqlEditor.vue          Wrapper Monaco (v-model, Ctrl+Entrée, Ctrl+Maj+Entrée) et autocomplétion
+│       │   ├── EditorTabs.vue         Barre des onglets d'éditeur (ajout, renommage, fermeture)
+│       │   ├── SqlEditor.vue          Wrapper Monaco (v-model, un modèle par onglet, Ctrl+Entrée, Ctrl+Maj+Entrée) et autocomplétion
 │       │   ├── ResultPanel.vue        Un onglet par requête exécutée (lignes, commande, erreur, ignorée)
 │       │   └── ResultGrid.vue         Grille HTML : tri, NULL, valeur complète au double-clic, copie TSV
 │       └── sql/
@@ -155,7 +157,8 @@ Un seul module, importé par le serveur (pour exécuter requête par requête) e
 ## Front-end
 
 - **État** : tout l'état partagé vit dans `App.vue` (refs) et descend par props ; les composants remontent des événements (`run`, `context`, `open-table`, `reload`, `saved`…). Pas de store.
-- **Persistance navigateur** (`localStorage`, préfixe `webgrip.`) : thème, connexion courante, base/schéma par connexion, texte de l'éditeur par connexion, hauteur de l'éditeur, nombre max de lignes.
+- **Persistance navigateur** (`localStorage`, préfixe `webgrip.`) : thème, connexion courante, base/schéma par connexion, onglets d'éditeur par connexion (`tabs.<id>` : nom et texte de chaque onglet, onglet actif ; l'ancien `sql.<id>` devient le premier onglet), hauteur de l'éditeur, nombre max de lignes.
+- **Onglets d'éditeur** : `App.vue` tient les onglets de la connexion courante (`tabs.ts`) et les résultats de chaque onglet, en mémoire seulement. `SqlEditor` reçoit l'id de l'onglet (`docId`) et garde un modèle Monaco par onglet : texte, historique d'annulation, curseur et défilement sont propres à chaque onglet. Une exécution range ses résultats dans l'onglet qui l'a lancée, même si l'utilisateur est passé à un autre entre-temps. Toutes les exécutions passent par la même session de la base, une à la fois.
 - **Flux d'exécution** : `SqlEditor` émet `run({ sql, offset })` (sélection, requête sous le curseur ou tout le script) → `App.vue` appelle `/query` avec la base et le schéma courants → `ResultPanel` affiche un onglet par résultat et ouvre la première erreur s'il y en a une.
 - **Arbre** (`DbTree.vue`) : nœuds chargés à l'ouverture, affichés à plat (calcul de l'indentation) pour rester léger ; un clic sur une base/un schéma change le contexte de l'éditeur, un double-clic sur une table ajoute et exécute `SELECT * … LIMIT n`.
 - **Grille** (`ResultGrid.vue`) : une simple `<table>` HTML (en-tête et numéros de ligne collants), plutôt qu'un `v-data-table`, pour garder la main sur le rendu et la densité ; la limite de lignes côté serveur borne sa taille.
