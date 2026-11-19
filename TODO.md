@@ -37,6 +37,10 @@
 - [ ] Connections through an SSH tunnel
 - [ ] SSL/TLS options in `ConnectionDialog`
 
+## Assistant
+
+- [x] Chat with Claude through the server's Claude Code CLI (`WEBGRIP_CHAT`), structure-only tools, `run_query` opt-in (`WEBGRIP_CHAT_RUN_QUERY`), attach a result by hand
+
 ## Engineering and maintenance
 
 - [ ] Integration tests against real servers (PostgreSQL and MariaDB in Docker containers; SQLite as a file)

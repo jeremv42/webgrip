@@ -18,6 +18,12 @@ A mini web DataGrip in TypeScript: Node (Express, `pg`, `mysql2`) + Vue 3 / Vuet
 - Cell editing when the rows come from one table with its primary key in the result: double-click to edit (Shift+double-click: full editor, NULL), changes stay pending until **Save**, which runs the `UPDATE`s in one transaction (inside yours if one is open)
 - One dedicated session per database for the editor (`BEGIN`/`SET`/temporary tables persist between runs); Cancel button (`pg_cancel_backend` / `KILL QUERY`)
 - Row limit (100 to 20,000): extra rows are never loaded (cursor on Postgres, streaming on MariaDB)
+- **Chat with Claude** (optional, `WEBGRIP_CHAT=1`): a right-hand panel backed by the Claude Code CLI installed and logged in
+  on the server (no API key: it uses that account). Claude has no shell or file access, only the selected connection's
+  structure (databases, tables, columns, keys, indexes). By default it never sees a row: it writes the queries, you run them,
+  and the paperclip attaches the result on screen to your message, where you can read and edit it before sending.
+  With `WEBGRIP_CHAT_RUN_QUERY=1` it may also run read-only queries itself. SQL blocks in its answers have **Insert**
+  (append to the editor) and **Copy**; the conversation is kept per connection
 
 ## Run
 
@@ -45,5 +51,8 @@ which only listens on `127.0.0.1:3070` (never exposed).
 
 Variables (environment or `.env`, ignored by git): `WEBGRIP_PASSWORD` (access password), `WEBGRIP_SECRET` (encryption key
 of the connections and the cookies, at least 16 characters: losing it means losing the saved connections),
-`WEB_PORT` (Vite's port, 5180), `PORT` (internal API port, 3070), `WEBGRIP_DATA` (path of the connections file).
+`WEB_PORT` (Vite's port, 5180), `PORT` (internal API port, 3070), `WEBGRIP_DATA` (path of the connections file),
+`WEBGRIP_CHAT` (1: chat panel, needs `claude` installed and logged in for the user running the API),
+`WEBGRIP_CHAT_RUN_QUERY` (1: Claude may run read-only queries and read their rows; off by default),
+`WEBGRIP_CLAUDE_BIN` (the CLI's path, default `claude` from `PATH`), `WEBGRIP_CHAT_MODEL` (e.g. `sonnet`; default: the CLI's).
 An old plain-text connections file is encrypted at the first start. Changing `WEBGRIP_PASSWORD` logs every session out.

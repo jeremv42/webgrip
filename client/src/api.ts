@@ -18,6 +18,32 @@ async function request<T>(method: string, url: string, body?: unknown): Promise<
   return data
 }
 
+// POST answered by a stream of JSON lines (NDJSON): calls onLine for each one, until the end or the abort signal.
+export async function postStream<T>(url: string, body: unknown, onLine: (line: T) => void, signal?: AbortSignal) {
+  const res = await fetch('/api' + url, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+    signal,
+  })
+  if (!res.ok || !res.body) {
+    const data = await res.json().catch(() => ({ error: res.statusText }))
+    if (res.status === 401) unauthorized()
+    throw new Error(data.error || res.statusText)
+  }
+  const reader = res.body.pipeThrough(new TextDecoderStream()).getReader()
+  let buffer = ''
+  for (;;) {
+    const { value, done } = await reader.read()
+    if (done) break
+    buffer += value
+    const lines = buffer.split('\n')
+    buffer = lines.pop()!
+    for (const line of lines) if (line.trim()) onLine(JSON.parse(line))
+  }
+  if (buffer.trim()) onLine(JSON.parse(buffer))
+}
+
 type Params = Record<string, string | number | null | undefined>
 
 export const qs = (params?: Params) => {

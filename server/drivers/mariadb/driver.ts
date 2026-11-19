@@ -16,7 +16,7 @@ import type {
   TableInfo,
   TableRef,
 } from '../../../shared/types.ts'
-import type { Driver, DriverConfig } from '../types.ts'
+import { EXPLORE_TIMEOUT_MS, type Driver, type DriverConfig, type ExploreResult } from '../types.ts'
 import { planOf } from './plan.ts'
 import { isPageable } from '../../../shared/pageable.ts'
 import { checkUpdated, editTargetOf, updateOf, type ColumnSource, type SourceTable } from '../edit.ts'
@@ -450,6 +450,28 @@ export class MariadbDriver implements Driver {
       .then(([r]) => r)
       .catch(() => [])
     return rows.map((w) => `${w.Level}: ${w.Message}`)
+  }
+
+  async explore(db: string | undefined, _schema: string | undefined, sql: string, maxRows: number): Promise<ExploreResult> {
+    const mariadb = await this.isMariadb()
+    const conn = mysql.createConnection(options(this.cfg, db || this.cfg.database || undefined))
+    conn.on('error', () => {})
+    try {
+      await new Promise<void>((res, rej) => conn.connect((e) => (e ? rej(e) : res())))
+      const promised: Connection = conn.promise()
+      await promised.query(
+        mariadb
+          ? `set session max_statement_time = ${EXPLORE_TIMEOUT_MS / 1000}`
+          : `set session max_execution_time = ${EXPLORE_TIMEOUT_MS}`,
+      )
+      await promised.query('start transaction read only')
+      const r = await this.exec(conn, sql, maxRows)
+      return r.kind === 'rows'
+        ? { kind: 'rows', columns: r.columns, rows: r.rows, truncated: r.truncated }
+        : { kind: 'command', command: r.command }
+    } finally {
+      conn.destroy() // the server rolls the transaction back
+    }
   }
 
   async cancel(db?: string) {

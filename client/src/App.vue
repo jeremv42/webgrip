@@ -90,6 +90,15 @@
           :loading="copying"
           @click="copySchema"
         />
+        <v-btn
+          v-if="features.chat"
+          icon="mdi-creation"
+          size="small"
+          :variant="chatOpen ? 'tonal' : 'text'"
+          :color="chatOpen ? 'primary' : undefined"
+          title="Chat with Claude"
+          @click="chatOpen = !chatOpen"
+        />
         <v-btn :icon="dark ? 'mdi-weather-sunny' : 'mdi-weather-night'" variant="text" size="small" @click="toggleTheme" />
         <v-btn icon="mdi-logout" variant="text" size="small" title="Log out" @click="logout" />
       </div>
@@ -119,6 +128,21 @@
       </div>
     </v-navigation-drawer>
 
+    <v-navigation-drawer v-if="features.chat && chatOpen" permanent location="right" :width="chatWidth">
+      <div class="chat-resizer" title="Drag to resize" @mousedown="startChatResize" />
+      <ChatPanel
+        :conn-id="connId"
+        :db="db"
+        :schema="schema"
+        :has-schemas="!!info?.hasSchemas"
+        :run-query="features.chatRunQuery"
+        :result="shownResult"
+        @insert="insertSql"
+        @close="chatOpen = false"
+        @error="notify"
+      />
+    </v-navigation-drawer>
+
     <v-main class="d-flex flex-column" style="height: 100vh">
       <EditorTabs v-model:active="tabState.active" :tabs="tabState.tabs" @add="addTab" @close="removeTab" @rename="renameTab" />
       <div :style="{ height: editorHeight + 'px' }" class="flex-grow-0 flex-shrink-0">
@@ -140,6 +164,7 @@
           :active="activeResult"
           :save="saveRows"
           :fetch-rows="fetchRows"
+          @shown="shownResult = $event"
         />
       </div>
     </v-main>
@@ -151,7 +176,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, nextTick, reactive, shallowReactive } from 'vue'
+import { ref, computed, watch, onMounted, nextTick, reactive, shallowReactive, shallowRef } from 'vue'
 import { useTheme } from 'vuetify'
 import { api, copyText, onUnauthorized, quoteIdent, store } from './api.ts'
 import SqlEditor, { type RunRequest } from './components/SqlEditor.vue'
@@ -160,10 +185,12 @@ import ResultPanel from './components/ResultPanel.vue'
 import ConnectionDialog from './components/ConnectionDialog.vue'
 import LoginDialog from './components/LoginDialog.vue'
 import EditorTabs from './components/EditorTabs.vue'
+import ChatPanel from './components/ChatPanel.vue'
 import { closeTab, loadTabs, newTab, saveTabs, type TabState } from './tabs.ts'
 import type {
   CompletionInfo,
   ConnectionInfo,
+  Features,
   PublicConnection,
   RowChange,
   RowsPage,
@@ -239,8 +266,36 @@ onUnauthorized(() => {
   needLogin.value = true
 })
 
+// ---- chat with Claude (when the server enables it) ----
+const features = ref<Features>({ chat: false, chatRunQuery: false })
+const shownResult = shallowRef<StatementResult>()
+const chatOpen = ref(store.get('chatOpen', false))
+const chatWidth = ref(store.get('chatWidth', 440))
+watch(chatOpen, (v) => store.set('chatOpen', v))
+function insertSql(sql: string) {
+  if (!editor.value) return
+  editor.value.append(sql.endsWith('\n') ? sql : sql + '\n')
+  editor.value.focus()
+}
+function startChatResize(e: MouseEvent) {
+  const x0 = e.clientX,
+    w0 = chatWidth.value
+  const move = (ev: MouseEvent) => {
+    chatWidth.value = Math.max(300, Math.min(window.innerWidth - 500, w0 + x0 - ev.clientX))
+  }
+  const up = () => {
+    window.removeEventListener('mousemove', move)
+    window.removeEventListener('mouseup', up)
+    store.set('chatWidth', chatWidth.value)
+  }
+  window.addEventListener('mousemove', move)
+  window.addEventListener('mouseup', up)
+  e.preventDefault()
+}
+
 async function loadConnections() {
   try {
+    features.value = await api.get<Features>('/features')
     connections.value = await api.get<PublicConnection[]>('/connections')
   } catch (e) {
     if (!needLogin.value) notify(e)

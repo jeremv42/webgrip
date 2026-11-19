@@ -11,7 +11,8 @@ import { isPageable } from '../shared/pageable.ts'
 import { toMarkdown } from './describe.ts'
 import { createAuth } from './auth.ts'
 import { isSealed, seal, unseal } from './vault.ts'
-import type { ConnectionConfig, ConnectionForm, PublicConnection, SaveRequest } from '../shared/types.ts'
+import { createChat, type ChatOptions } from './chat.ts'
+import type { ConnectionConfig, ConnectionForm, Features, PublicConnection, SaveRequest } from '../shared/types.ts'
 
 export class HttpError extends Error {
   status: number
@@ -50,9 +51,11 @@ export interface AppOptions {
   // the password asked at login
   password: string
   makeDriver?: (cfg: DriverConfig) => Driver
+  // chat with Claude through the Claude Code CLI (WEBGRIP_CHAT); off when missing
+  chat?: ChatOptions
 }
 
-export function createApp({ dataFile, secret, password, makeDriver = defaultDriver }: AppOptions) {
+export function createApp({ dataFile, secret, password, makeDriver = defaultDriver, chat }: AppOptions) {
   const save = (list: ConnectionConfig[]) => {
     fs.mkdirSync(path.dirname(dataFile), { recursive: true })
     fs.writeFileSync(dataFile, seal(JSON.stringify(list), secret), { mode: 0o600 })
@@ -81,9 +84,7 @@ export function createApp({ dataFile, secret, password, makeDriver = defaultDriv
   function driver(id: string) {
     let d = drivers.get(id)
     if (!d) {
-      const cfg = connections.find((c) => c.id === id)
-      if (!cfg) throw new HttpError('Unknown connection', 404)
-      d = makeDriver(cfg)
+      d = makeDriver(connection(id))
       drivers.set(id, d)
     }
     return d
@@ -94,13 +95,28 @@ export function createApp({ dataFile, secret, password, makeDriver = defaultDriv
     await d?.close()
   }
 
+  const connection = (id: string) => {
+    const cfg = connections.find((c) => c.id === id)
+    if (!cfg) throw new HttpError('Unknown connection', 404)
+    return cfg
+  }
+
   const app = express()
   app.use(express.json({ limit: '20mb' }))
+
+  // Outside /api (never proxied to the browser): the chat's database tools, for the Claude Code process only (token).
+  const claude = chat && createChat(chat, { dir: path.join(path.dirname(dataFile), 'chat'), driver, connection })
+  if (claude) app.all('/mcp', claude.mcp)
 
   const auth = createAuth({ password, secret })
   app.post('/api/login', auth.login)
   app.post('/api/logout', auth.logout)
   app.use('/api', auth.guard)
+
+  app.get(
+    '/api/features',
+    h((): Features => ({ chat: !!claude, chatRunQuery: !!claude && !!chat?.runQuery })),
+  )
 
   app.get(
     '/api/connections',
@@ -234,6 +250,8 @@ export function createApp({ dataFile, secret, password, makeDriver = defaultDriv
     '/api/c/:id/cancel',
     h(async (req) => ({ cancelled: await driver(connId(req)).cancel(req.body.db || undefined) })),
   )
+
+  if (claude) app.post('/api/c/:id/chat', claude.chat)
 
   return app
 }

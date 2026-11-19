@@ -30,7 +30,8 @@ webgrip/
 │   ├── app.ts                 Express createApp(): routes, saved connections, driver cache
 │   ├── auth.ts                Password, signed session cookie, guard of the /api routes
 │   ├── vault.ts               AES-256-GCM encryption of the connections file
-│   ├── describe.ts            Structure export as Markdown (to paste into a chat)
+│   ├── describe.ts            Structure export as Markdown (to paste into a chat, and the chat's describe_schema tool)
+│   ├── chat.ts                Chat with Claude: runs the Claude Code CLI, serves its database tools over MCP (/mcp)
 │   └── drivers/
 │       ├── types.ts           Common Driver interface
 │       ├── plan.ts            Helpers shared by the plan parsers
@@ -53,6 +54,7 @@ webgrip/
 │       ├── api.ts             JSON fetch, identifier quoting, small localStorage wrapper
 │       ├── grid.ts            Grid: number detection, sorting, TSV export, visible rows, column widths
 │       ├── tabs.ts            Editor tabs: creation, closing, saving per connection
+│       ├── chat.ts            Chat: conversation built from the stream, Markdown rendering (marked + DOMPurify), attached results
 │       ├── style.css
 │       ├── components/
 │       │   ├── LoginDialog.vue        Password prompt (shown as soon as a request gets a 401)
@@ -61,6 +63,7 @@ webgrip/
 │       │   ├── EditorTabs.vue         Editor tab bar (add, rename, close)
 │       │   ├── SqlEditor.vue          Monaco wrapper (v-model, one model per tab, Ctrl+Enter, Ctrl+Shift+Enter) and completion
 │       │   ├── ResultPanel.vue        One tab per executed statement (rows, plan, command, error, skipped)
+│       │   ├── ChatPanel.vue          Right-hand chat drawer (WEBGRIP_CHAT): messages, tool calls, Insert / Copy on code, attach result
 │       │   ├── PlanView.vue           Plan / Raw toggle: tree with self time / cost share, actual vs estimated rows, details; or the engine's output
 │       │   └── ResultGrid.vue         Virtualized HTML grid: sorting, NULL, resizable columns, cell copy, cell editing, TSV copy
 │       └── sql/
@@ -70,7 +73,7 @@ webgrip/
 ├── patches/                   patch-package fixes of dependencies
 ├── **/*.test.ts               Vitest tests, next to the tested code (plan parsers: real EXPLAIN outputs in plan.fixtures.json)
 ├── data/connections.json      Saved connections, encrypted (created at run time, ignored by git)
-├── .env                       WEBGRIP_PASSWORD, WEBGRIP_SECRET (ignored by git; template: .env.example)
+├── .env                       WEBGRIP_PASSWORD, WEBGRIP_SECRET, WEBGRIP_CHAT… (ignored by git; template: .env.example)
 ├── dist/                      Front-end build (`npm run build`)
 ├── tsconfig*.json             tsconfig.app.json (SPA, vue-tsc) and tsconfig.node.json (API, tooling)
 ├── .oxlintrc.json / .oxfmtrc.json   Lint (oxlint) and formatting (oxfmt)
@@ -112,6 +115,9 @@ browser ──► Vite :5180 ──(/api/*)──► Express API 127.0.0.1:3070 
 | POST | `/api/c/:id/rows` | `{ db, schema, sql, offset, count }` → `{ rows, truncated, total? }`: rows after the row limit (read-only statements only, `count` ≤ 100,000) |
 | POST | `/api/c/:id/save` | `{ db, schema, target: { schema, table }, changes: [{ key, set }] }` → `{ updated }`: edited rows (see Cell editing) |
 | POST | `/api/c/:id/cancel` | `{ db }`: cancels the running query |
+| GET | `/api/features` | `{ chat, chatRunQuery }`: what the server enables |
+| POST | `/api/c/:id/chat` | `{ message, sessionId?, db, schema }` → NDJSON stream of `ChatEvent` (only with `WEBGRIP_CHAT`, see Chat) |
+| POST | `/mcp` | Not under `/api` (never proxied): MCP endpoint of the chat's tools, for the CLI process only (bearer token) |
 
 Every route but `/api/login` requires the session cookie (else `401 { error }`).
 Errors are returned as `4xx` with `{ error }`. SQL errors, however, are part of the result (`kind: 'error'`).
@@ -180,6 +186,49 @@ A single module, imported by the server (to run statement by statement) and by t
   - *Quick filter* (debounced) keeps the rows where a shown column contains the text, case-insensitive. *Hidden columns* (Columns menu) are left out of the grid, the filter and the TSV copy; both are kept when the next result has the same column names.
   - *Copy*: the hovered cell (tracked by delegation on `tbody`) shows a copy button when the column is at least 72 px wide and the value is not NULL.
 - **Cell editing**: the driver tells whether a result is editable (`editable`: schema, table, the table column behind each result column, primary key). Postgres gives each field's `tableID` / `columnID`, read in `pg_attribute` / `pg_index`; MySQL/MariaDB give `orgTable` / `orgName`, read in `information_schema`. `edit.ts` keeps the one table whose whole primary key is in the result, each of its columns shown once (no self-join); only its columns are editable, minus generated ones (and binary ones in MySQL, shown as hex). A failed lookup only makes the result read-only. In the grid, a double-click edits in place (Enter / Escape; Shift+double-click, multi-line or long values: a dialog with a NULL box); edits are kept per result (`WeakMap`), so switching result tabs keeps them, and drawn as pending until **Save**. Save groups them by row (`{ key: values read, set: new values }`) and `POST /save` runs parameterized `UPDATE`s on the editor session, in a transaction (or a savepoint inside the user's own, refused in a failed one); each must match exactly one row (MySQL: `Rows matched` from the info, since `affectedRows` skips unchanged rows), otherwise everything is rolled back and the edits stay pending.
+
+## Chat with Claude (`WEBGRIP_CHAT`)
+
+No API key: the server runs the Claude Code CLI installed on the machine (`WEBGRIP_CLAUDE_BIN`, default `claude`), logged
+in with the owner's account, once per message:
+
+```
+claude -p --output-format stream-json --verbose --include-partial-messages --tools "" --strict-mcp-config
+       --mcp-config <file> --allowedTools mcp__webgrip__… --permission-mode dontAsk --setting-sources ""
+       --disable-slash-commands --system-prompt <WebGrip's> [--model …] [--resume <sessionId>]
+```
+
+- **No built-in tool** (`--tools ""`: no shell, files nor web), no user / project settings, hooks or other MCP servers;
+  anything not allowed is denied (`dontAsk`). The only tools are WebGrip's, scoped to the chat's connection:
+  `list_databases`, `list_tables`, `describe_schema` (the Markdown of `describe.ts`: structure only) and, only with
+  `WEBGRIP_CHAT_RUN_QUERY=1`, `run_query`.
+- **Size**: every tool result is capped at 40,000 characters (≈ 10k tokens), under the CLI's limit for an MCP result
+  (25k tokens), above which it saves the result to a file this Claude cannot read. `describe_schema` (`describeForChat`)
+  gives the full Markdown when it fits; else an overview as detailed as fits (one line per table: columns with types,
+  PK and `→` foreign keys; then column names only; then table names), and its `tables` argument gives the full detail
+  of the tables asked for.
+- **MCP**: `server/chat.ts` serves them itself on `/mcp` (JSON-RPC over HTTP, JSON answers, no SSE): a random token per
+  run maps to `{ connection, db, schema }` and dies with the process; it is written to a private config file
+  (`data/chat/mcp-*.json`, mode 600, deleted afterwards) rather than on the command line. `/mcp` is outside `/api`, so
+  Vite never proxies it: only local processes reach it.
+- **`run_query`** (opt-in): one statement starting with SELECT / WITH / VALUES / TABLE / SHOW / EXPLAIN / DESCRIBE
+  (no `INTO OUTFILE`), run by the driver's `explore()` on a **fresh connection** (never the editor session), inside a
+  read-only transaction (`BEGIN READ ONLY` / `START TRANSACTION READ ONLY`) that is rolled back, with a 30 s limit
+  (`statement_timeout` / `max_statement_time` / `max_execution_time`); at most 1,000 rows, returned as TSV with values
+  cut at 300 characters. It runs as the connection's user: a read-only database user is the strongest guarantee (a
+  superuser could still call side-effecting functions from a SELECT).
+- **Without it** (default), Claude never receives a row: the system prompt tells it to write the query and ask. In
+  the panel, the paperclip puts the result on screen (`attachText`: SQL + up to 200 rows as TSV, or the error) into the
+  message draft, where the user sees and edits exactly what is sent.
+- **Conversation**: each message is prefixed with `[WebGrip] connection "…" (engine), database …, schema …`, so the
+  context follows the UI. The `init` event gives the CLI's session id; the next message passes it back (`--resume`).
+  The CLI runs in `data/chat/` (stable, so its sessions resume). The panel keeps the conversation per connection in
+  `localStorage` (`chat.<id>`, last 60 messages).
+- **Stream**: stdout lines are mapped (`toEvents`) to `session`, `text` (deltas), `tool`, `tool_result`, `done { error? }`.
+  Closing the request (Stop, changing connection) kills the process; a failure without a result gives `done` with the
+  end of stderr (e.g. not logged in).
+- **Rendering**: answers are Markdown (`marked`), sanitized by DOMPurify; code blocks get Copy, and SQL ones Insert
+  (appended to the active editor tab), handled by delegation.
 
 ## Security
 

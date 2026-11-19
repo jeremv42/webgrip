@@ -55,6 +55,9 @@ watch(
   },
 )
 const current = computed<StatementResult | undefined>(() => props.results[tab.value])
+// the result on screen (the chat can attach it)
+const emit = defineEmits<{ shown: [result: StatementResult | undefined] }>()
+watch(current, (r) => emit('shown', r), { immediate: true })
 
 const iconFor = (r: StatementResult) =>
   r.explain && r.kind === 'rows'

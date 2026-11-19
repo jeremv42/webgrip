@@ -216,3 +216,29 @@ export interface Plan {
   // total of the measure used for the bars (time if analyzed, else cost)
   total: number
 }
+
+// ---- chat with Claude (WEBGRIP_CHAT) ----
+
+// What the API enables, read once logged in
+export interface Features {
+  chat: boolean
+  // Claude may run read-only queries itself (else it never sees a row unless the user attaches a result)
+  chatRunQuery: boolean
+}
+
+export interface ChatRequest {
+  message: string
+  // the conversation to continue (from a previous `session` event)
+  sessionId?: string
+  // the database / schema selected in the UI: the defaults of Claude's queries
+  db?: string | null
+  schema?: string | null
+}
+
+// One line (NDJSON) of the answer to POST /api/c/:id/chat
+export type ChatEvent =
+  | { type: 'session'; id: string }
+  | { type: 'text'; text: string }
+  | { type: 'tool'; id: string; name: string; input: Record<string, unknown> }
+  | { type: 'tool_result'; id: string; text: string; error: boolean }
+  | { type: 'done'; error?: string }

@@ -3,6 +3,8 @@ import type {
   CompletionInfo,
   ConnectionConfig,
   ExplainMode,
+  Cell,
+  ResultColumn,
   RowChange,
   RowsPage,
   SchemaDescription,
@@ -14,6 +16,14 @@ import type {
 
 // A connection may be tested before it is saved: it has no id yet, and the form may leave fields empty.
 export type DriverConfig = Partial<ConnectionConfig> & Pick<ConnectionConfig, 'type'>
+
+// What a read-only query run for the chat returned
+export type ExploreResult =
+  | { kind: 'rows'; columns: ResultColumn[]; rows: Cell[][]; truncated: boolean }
+  | { kind: 'command'; command: string }
+
+// Time limit of a chat query
+export const EXPLORE_TIMEOUT_MS = 30_000
 
 // What the API needs from a database engine. `db` / `schema` left empty = the connection's defaults.
 export interface Driver {
@@ -39,6 +49,9 @@ export interface Driver {
   // Updates edited rows on the editor session, all or nothing (inside the session's transaction if one is open);
   // each change must hit exactly one row. Returns the number of rows updated.
   save(db: string | undefined, schema: string | undefined, target: TableRef, changes: RowChange[]): Promise<number>
+  // Runs one statement for the chat on a fresh connection (never the editor session), inside a read-only transaction
+  // that is rolled back, with a time limit (EXPLORE_TIMEOUT_MS). Keeps at most maxRows rows.
+  explore(db: string | undefined, schema: string | undefined, sql: string, maxRows: number): Promise<ExploreResult>
   cancel(db?: string): Promise<boolean>
   close(): Promise<void>
 }

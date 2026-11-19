@@ -30,6 +30,12 @@ function fakeDriver(cfg: DriverConfig) {
       truncated: true,
     })),
     save: vi.fn(async (_db: string | undefined, _schema: string | undefined, _target: TableRef, changes: RowChange[]) => changes.length),
+    explore: vi.fn(async (_db: string | undefined, _schema: string | undefined, sql: string, _maxRows: number) => ({
+      kind: 'rows' as const,
+      columns: [{ name: 'sql', type: 'text' }],
+      rows: [[sql], [null]],
+      truncated: false,
+    })),
     cancel: vi.fn(async () => true),
     close: vi.fn(async () => {}),
   } satisfies Driver & { cfg: DriverConfig }

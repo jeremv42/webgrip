@@ -19,5 +19,16 @@ if (!password || secret.length < 16) {
   process.exit(1)
 }
 
+// Chat with Claude through the Claude Code CLI of this machine (its logged-in account)
+const flag = (name: string) => /^(1|true|yes|on)$/i.test(process.env[name] || '')
+const chat = flag('WEBGRIP_CHAT')
+  ? {
+      bin: process.env.WEBGRIP_CLAUDE_BIN || 'claude',
+      model: process.env.WEBGRIP_CHAT_MODEL || undefined,
+      // off by default: Claude sees the structure only, never a row unless the user attaches it
+      runQuery: flag('WEBGRIP_CHAT_RUN_QUERY'),
+    }
+  : undefined
+
 // API only, never exposed: the browser reaches it through the Vite proxy (/api).
-createApp({ dataFile, secret, password }).listen(PORT, '127.0.0.1', () => console.log(`webgrip API on http://127.0.0.1:${PORT}`))
+createApp({ dataFile, secret, password, chat }).listen(PORT, '127.0.0.1', () => console.log(`webgrip API on http://127.0.0.1:${PORT}`))

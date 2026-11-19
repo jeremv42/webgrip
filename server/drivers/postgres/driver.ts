@@ -17,7 +17,7 @@ import type {
   TableKind,
   TableRef,
 } from '../../../shared/types.ts'
-import type { Driver, DriverConfig } from '../types.ts'
+import { EXPLORE_TIMEOUT_MS, type Driver, type DriverConfig, type ExploreResult } from '../types.ts'
 import { planOf } from './plan.ts'
 import { isPageable, stripLeadingComments } from '../../../shared/pageable.ts'
 import { checkUpdated, editTargetOf, updateOf, type ColumnSource, type SourceTable } from '../edit.ts'
@@ -473,6 +473,28 @@ export class PostgresDriver implements Driver {
       return changes.length
     } finally {
       s.busy = false
+    }
+  }
+
+  async explore(db: string | undefined, schema: string | undefined, sql: string, maxRows: number): Promise<ExploreResult> {
+    db ||= this.defaultDb()
+    const client = new pg.Client({ ...this.clientConfig(db), types: rawTypes })
+    client.on('error', () => {})
+    await client.connect()
+    try {
+      await client.query('begin transaction read only')
+      await client.query(`set local statement_timeout = ${EXPLORE_TIMEOUT_MS}`)
+      if (schema) await client.query(`set local search_path to ${ident(schema)}${schema === 'public' ? '' : ', public'}`)
+      const r = ROW_STATEMENT.test(stripLeadingComments(sql))
+        ? await this.cursorQuery(client, sql, maxRows)
+        : await client.query<Cell[]>({ text: sql, rowMode: 'array' })
+      if (!r.fields?.length) return { kind: 'command', command: r.command }
+      const columns = []
+      for (const f of r.fields) columns.push({ name: f.name, type: await this.typeName(db, f.dataTypeID) })
+      return { kind: 'rows', columns, rows: r.rows.slice(0, maxRows), truncated: r.rows.length > maxRows }
+    } finally {
+      await client.query('rollback').catch(() => {})
+      await client.end().catch(() => {})
     }
   }
 
