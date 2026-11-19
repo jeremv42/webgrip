@@ -53,9 +53,12 @@ export interface AppOptions {
   makeDriver?: (cfg: DriverConfig) => Driver
   // chat with Claude through the Claude Code CLI (WEBGRIP_CHAT); off when missing
   chat?: ChatOptions
+  // desktop app (server/desktop.ts): `password` is a random token of this launch, given to the window by
+  // GET /api/desktop-login, and the UI has no login or logout
+  desktop?: boolean
 }
 
-export function createApp({ dataFile, secret, password, makeDriver = defaultDriver, chat }: AppOptions) {
+export function createApp({ dataFile, secret, password, makeDriver = defaultDriver, chat, desktop = false }: AppOptions) {
   const save = (list: ConnectionConfig[]) => {
     fs.mkdirSync(path.dirname(dataFile), { recursive: true })
     fs.writeFileSync(dataFile, seal(JSON.stringify(list), secret), { mode: 0o600 })
@@ -111,11 +114,12 @@ export function createApp({ dataFile, secret, password, makeDriver = defaultDriv
   const auth = createAuth({ password, secret })
   app.post('/api/login', auth.login)
   app.post('/api/logout', auth.logout)
+  if (desktop) app.get('/api/desktop-login', auth.tokenLogin)
   app.use('/api', auth.guard)
 
   app.get(
     '/api/features',
-    h((): Features => ({ chat: !!claude, chatRunQuery: !!claude && !!chat?.runQuery })),
+    h((): Features => ({ chat: !!claude, chatRunQuery: !!claude && !!chat?.runQuery, desktop })),
   )
 
   app.get(

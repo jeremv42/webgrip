@@ -36,6 +36,22 @@ npm run build && npm start       # vite preview of the build, port 5180
 
 Node ≥ 23.6: the API (`server/*.ts`) runs as is, with no build step (type stripping).
 
+## Desktop app
+
+The same app as a native window (Tauri v2: the system's webview, no bundled Chromium), with no password and
+nothing else to install on the target machine: the server is shipped as a single executable.
+
+```bash
+# once: Rust (https://rustup.rs) and, on Debian/Ubuntu, the WebKitGTK headers
+sudo apt install libwebkit2gtk-4.1-dev build-essential libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+
+npm run desktop:dev              # builds the SPA and the server executable, then opens the app
+npm run desktop:build            # installers in src-tauri/target/release/bundle/ (.deb, .rpm, AppImage / .dmg / .msi)
+```
+
+Packages are built for the platform you build on (a macOS or Windows machine for those). Connections are kept in
+the app's data folder; the chat turns on by itself when the `claude` CLI is installed. See ARCHITECTURE.md.
+
 ## Check
 
 ```bash

@@ -10,7 +10,7 @@
     "builtin": true,
     "es2024": true
   },
-  "ignorePatterns": ["dist/**", "data/**", "patches/**"],
+  "ignorePatterns": ["dist/**", "data/**", "patches/**", "src-tauri/**"],
   "overrides": [
     {
       "files": ["client/**"],
@@ -19,7 +19,7 @@
       }
     },
     {
-      "files": ["server/**", "*.config.ts"],
+      "files": ["server/**", "scripts/**", "*.config.ts"],
       "env": {
         "node": true
       }

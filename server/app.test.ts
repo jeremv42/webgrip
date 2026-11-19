@@ -310,4 +310,25 @@ describe('authentication', () => {
     const res = await fetch(base + '/logout', { method: 'POST', headers: { cookie } })
     expect(res.headers.get('set-cookie')).toMatch(/^webgrip_session=; .*Max-Age=0$/)
   })
+
+  it('has no token login outside the desktop app', async () => {
+    const res = await fetch(base + `/desktop-login?token=${password}`, { redirect: 'manual' })
+    expect(res.status).toBe(401) // behind the guard, like any unknown route
+    expect(res.headers.get('set-cookie')).toBeNull()
+  })
+
+  it('logs the desktop window in with the launch token, then redirects to the app', async () => {
+    const token = 'a'.repeat(64)
+    const desktop = await listen(createApp({ dataFile, secret, password: token, makeDriver: fakeDriver, desktop: true }))
+    const bad = await fetch(desktop.base + '/desktop-login?token=wrong', { redirect: 'manual' })
+    expect(bad.status).toBe(401)
+    expect(bad.headers.get('set-cookie')).toBeNull()
+    const ok = await fetch(desktop.base + `/desktop-login?token=${token}`, { redirect: 'manual' })
+    expect(ok.status).toBe(303)
+    expect(ok.headers.get('location')).toBe('/')
+    const session = ok.headers.get('set-cookie')!.split(';')[0]
+    const features = await fetch(desktop.base + '/features', { headers: { cookie: session } })
+    expect(await features.json()).toEqual({ chat: false, chatRunQuery: false, desktop: true })
+    await new Promise((resolve) => desktop.server.close(resolve))
+  })
 })

@@ -236,14 +236,14 @@ const events = async (res: Response) =>
 describe('chat route', () => {
   it('is off unless enabled', async () => {
     const { root, headers, conn, post } = await start(false)
-    expect(await (await fetch(root + '/api/features', { headers })).json()).toEqual({ chat: false, chatRunQuery: false })
+    expect(await (await fetch(root + '/api/features', { headers })).json()).toEqual({ chat: false, chatRunQuery: false, desktop: false })
     expect((await post(`/api/c/${conn.id}/chat`, { message: 'hi' })).status).toBe(404)
     expect((await fetch(root + '/mcp', { method: 'POST' })).status).toBe(404)
   })
 
   it('streams the answer, with the read-only tools of the connection', async () => {
     const { root, headers, conn, post, explore, dir: tmp } = await start(true)
-    expect(await (await fetch(root + '/api/features', { headers })).json()).toEqual({ chat: true, chatRunQuery: true })
+    expect(await (await fetch(root + '/api/features', { headers })).json()).toEqual({ chat: true, chatRunQuery: true, desktop: false })
     const res = await post(`/api/c/${conn.id}/chat`, { message: 'How many?', db: 'shop', schema: 'sales' })
     expect(res.headers.get('content-type')).toMatch(/ndjson/)
     const ev = await events(res)
@@ -267,7 +267,7 @@ describe('chat route', () => {
 
   it('without WEBGRIP_CHAT_RUN_QUERY, gives Claude no way to read rows', async () => {
     const { root, headers, conn, post, explore } = await start(true, false)
-    expect(await (await fetch(root + '/api/features', { headers })).json()).toEqual({ chat: true, chatRunQuery: false })
+    expect(await (await fetch(root + '/api/features', { headers })).json()).toEqual({ chat: true, chatRunQuery: false, desktop: false })
     const ev = await events(await post(`/api/c/${conn.id}/chat`, { message: 'How many?' }))
     expect(JSON.parse((ev[1] as { text: string }).text).tools).toEqual(['list_databases', 'list_tables', 'describe_schema'])
     // even called anyway, the tool is refused

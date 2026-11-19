@@ -224,6 +224,8 @@ export interface Features {
   chat: boolean
   // Claude may run read-only queries itself (else it never sees a row unless the user attaches a result)
   chatRunQuery: boolean
+  // desktop app: no login, no logout
+  desktop: boolean
 }
 
 export interface ChatRequest {

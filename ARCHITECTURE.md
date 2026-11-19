@@ -27,6 +27,7 @@ The code (TypeScript) is about 3,000 lines without tests, with no database of it
 webgrip/
 ├── server/                    Backend (API only, listens on 127.0.0.1:3070 only), run as is by Node (type stripping)
 │   ├── index.ts               Entry point: reads .env and the environment, then listens
+│   ├── desktop.ts             Entry point of the desktop app's server (launch token, free port, serves dist/)
 │   ├── app.ts                 Express createApp(): routes, saved connections, driver cache
 │   ├── auth.ts                Password, signed session cookie, guard of the /api routes
 │   ├── vault.ts               AES-256-GCM encryption of the connections file
@@ -70,6 +71,12 @@ webgrip/
 │           ├── sources.ts             Completion without Monaco: names, schema index, tables read by the statement
 │           ├── pgsql.worker.ts        Entry point of the PostgreSQL parser worker
 │           └── mysql.worker.ts        Entry point of the MySQL/MariaDB parser worker
+├── src-tauri/                 Desktop app (Tauri v2)
+│   ├── src/main.rs            Starts the server sidecar, points the window at it, kills it on exit
+│   ├── tauri.conf.json        Bundle: sidecar (externalBin), dist/ (resources), icons, splash page
+│   ├── splash/index.html      Shown until the server is up (or with its error)
+│   └── binaries/              The server as a single executable (`npm run desktop:prepare`, ignored by git)
+├── scripts/build-sidecar.ts   rolldown bundle of server/desktop.ts + node --build-sea → src-tauri/binaries/
 ├── patches/                   patch-package fixes of dependencies
 ├── **/*.test.ts               Vitest tests, next to the tested code (plan parsers: real EXPLAIN outputs in plan.fixtures.json)
 ├── data/connections.json      Saved connections, encrypted (created at run time, ignored by git)
@@ -92,6 +99,35 @@ browser ──► Vite :5180 ──(/api/*)──► Express API 127.0.0.1:3070 
 - Vite listens on the IP of the `tailscale0` interface; in `npm run dev`, a small plugin (`localhostForward` in `vite.config.ts`) forwards `127.0.0.1:5180` to that address to keep `localhost` usable. `allowedHosts` allows the machine name and `*.ts.net` (MagicDNS). Without Tailscale, Vite stays on localhost.
 - `npm start` = API + `vite preview` of the build, on the same address as the dev server.
 - Variables: `WEBGRIP_PASSWORD`, `WEBGRIP_SECRET`, `WEB_PORT` (5180), `PORT` (internal API port, 3070), `WEBGRIP_DATA` (connections file). `server/index.ts` reads `.env` when it exists (`process.loadEnvFile`, variables already set win) and refuses to start without a password and a secret.
+
+## Desktop app (`src-tauri/`)
+
+```
+Tauri window (system webview) ──► webgrip-server 127.0.0.1:<free port> ──► PostgreSQL / MariaDB
+   └── splash page until the port is known      └── serves dist/ and /api, no Vite
+```
+
+- The same SPA and API as the web version. The Tauri shell (`main.rs`) only starts the server, waits for the
+  `WEBGRIP_PORT=<port>` line on its stdout, and navigates its window to it. The window has no Tauri IPC
+  (no capability): it is a plain web page, limited by `on_navigation` to the server's origin and the splash page.
+- The server is `server/desktop.ts`, bundled with its dependencies by rolldown (CommonJS, `pg-native` left out)
+  and made a single executable by `node --build-sea` (`scripts/build-sidecar.ts`), named
+  `webgrip-server-<target triple>` as Tauri wants for an `externalBin`. No Node needed on the target machine.
+  The price is its size: ~150 MB (the Node runtime), ~50 MB compressed in the packages.
+- **No password**: each launch draws a random 32-byte token, passed to the server as `WEBGRIP_LAUNCH_TOKEN`
+  (it is the `password` of `createApp`, with `desktop: true`). The window first opens
+  `/api/desktop-login?token=…`, which sets the usual session cookie and redirects to `/`. Cookies of a previous
+  launch are invalid (they are signed with the old token). `Features.desktop` hides the Log out button.
+- The server only answers the `Host` `127.0.0.1:<port>` (421 otherwise): a site reaching it through DNS rebinding
+  gets nothing, and has no cookie anyway.
+- Data: `connections.json` and its key `secret.key` (random, mode `600`, made at the first launch) live in the
+  app's data folder (`~/.local/share/dev.webgrip.desktop` on Linux, `~/Library/Application Support/…` on macOS,
+  `%APPDATA%\…` on Windows). The key sits next to the file, so only the file permissions protect it (no OS keychain yet).
+- Chat: on when a `claude` executable is found (`PATH`, then `~/.local/bin`, `~/.claude/local`, `/usr/local/bin`,
+  `/opt/homebrew/bin`, since an app started from the desktop often lacks the shell's `PATH`); `WEBGRIP_CHAT=0` turns
+  it off, `WEBGRIP_CHAT_RUN_QUERY` / `WEBGRIP_CHAT_MODEL` / `WEBGRIP_CLAUDE_BIN` work as in the web version.
+- Lifetime: the shell kills the server on exit, and the server exits when its stdin closes (the shell is gone,
+  even after a crash).
 
 ## Backend
 

@@ -42,21 +42,32 @@ export function createAuth({ password, secret, now = () => Date.now() }: { passw
 
   let failures: number[] = []
 
+  // Sets the session cookie when `given` is the password, else answers the error (and returns false).
+  async function attempt(given: unknown, res: Response) {
+    failures = failures.filter((t) => t > now() - 60_000)
+    if (failures.length >= MAX_FAILURES) {
+      res.status(429).json({ error: 'Too many attempts, try again in a minute' })
+      return false
+    }
+    if (!check(given)) {
+      failures.push(now())
+      await new Promise((resolve) => setTimeout(resolve, 500)) // slows down guessing
+      res.status(401).json({ error: 'Wrong password' })
+      return false
+    }
+    res.setHeader('Set-Cookie', cookie(token(), MAX_AGE))
+    return true
+  }
+
   return {
     async login(req: Request, res: Response) {
-      failures = failures.filter((t) => t > now() - 60_000)
-      if (failures.length >= MAX_FAILURES) {
-        res.status(429).json({ error: 'Too many attempts, try again in a minute' })
-        return
-      }
-      if (!check(req.body?.password)) {
-        failures.push(now())
-        await new Promise((resolve) => setTimeout(resolve, 500)) // slows down guessing
-        res.status(401).json({ error: 'Wrong password' })
-        return
-      }
-      res.setHeader('Set-Cookie', cookie(token(), MAX_AGE))
-      res.json({ ok: true })
+      if (await attempt(req.body?.password, res)) res.json({ ok: true })
+    },
+
+    // Desktop app: the window opens GET /api/desktop-login?token=<launch token> (the password of this launch),
+    // which sets the cookie and goes on to the app, so there is no login dialog.
+    async tokenLogin(req: Request, res: Response) {
+      if (await attempt(req.query.token, res)) res.redirect(303, '/')
     },
 
     logout(_req: Request, res: Response) {

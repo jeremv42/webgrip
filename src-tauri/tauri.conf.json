@@ -1,0 +1,24 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "WebGrip",
+  "version": "0.1.0",
+  "identifier": "dev.webgrip.desktop",
+  "build": {
+    "frontendDist": "splash",
+    "beforeDevCommand": { "script": "npm run desktop:prepare", "wait": true },
+    "beforeBuildCommand": "npm run desktop:prepare"
+  },
+  "app": {
+    "windows": [],
+    "security": { "csp": null }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "category": "DeveloperTool",
+    "shortDescription": "PostgreSQL and MariaDB/MySQL client",
+    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.icns", "icons/icon.ico"],
+    "externalBin": ["binaries/webgrip-server"],
+    "resources": { "../dist/": "dist/" }
+  }
+}

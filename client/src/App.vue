@@ -100,7 +100,7 @@
           @click="chatOpen = !chatOpen"
         />
         <v-btn :icon="dark ? 'mdi-weather-sunny' : 'mdi-weather-night'" variant="text" size="small" @click="toggleTheme" />
-        <v-btn icon="mdi-logout" variant="text" size="small" title="Log out" @click="logout" />
+        <v-btn v-if="!features.desktop" icon="mdi-logout" variant="text" size="small" title="Log out" @click="logout" />
       </div>
     </v-app-bar>
 
@@ -267,7 +267,7 @@ onUnauthorized(() => {
 })
 
 // ---- chat with Claude (when the server enables it) ----
-const features = ref<Features>({ chat: false, chatRunQuery: false })
+const features = ref<Features>({ chat: false, chatRunQuery: false, desktop: false })
 const shownResult = shallowRef<StatementResult>()
 const chatOpen = ref(store.get('chatOpen', false))
 const chatWidth = ref(store.get('chatWidth', 440))
