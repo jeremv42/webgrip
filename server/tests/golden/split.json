@@ -1,0 +1,694 @@
+[
+ {
+  "text": "select 1; select 2",
+  "dialect": "postgres",
+  "out": [
+   {
+    "sql": "select 1",
+    "start": 0,
+    "end": 8
+   },
+   {
+    "sql": "select 2",
+    "start": 10,
+    "end": 18
+   }
+  ]
+ },
+ {
+  "text": "select 1; select 2",
+  "dialect": "mariadb",
+  "out": [
+   {
+    "sql": "select 1",
+    "start": 0,
+    "end": 8
+   },
+   {
+    "sql": "select 2",
+    "start": 10,
+    "end": 18
+   }
+  ]
+ },
+ {
+  "text": "select 1;\n\nselect 2;\n",
+  "dialect": "postgres",
+  "out": [
+   {
+    "sql": "select 1",
+    "start": 0,
+    "end": 8
+   },
+   {
+    "sql": "select 2",
+    "start": 11,
+    "end": 19
+   }
+  ]
+ },
+ {
+  "text": "select 1;\n\nselect 2;\n",
+  "dialect": "mariadb",
+  "out": [
+   {
+    "sql": "select 1",
+    "start": 0,
+    "end": 8
+   },
+   {
+    "sql": "select 2",
+    "start": 11,
+    "end": 19
+   }
+  ]
+ },
+ {
+  "text": "select ';' as a; select 'it''s; fine'",
+  "dialect": "postgres",
+  "out": [
+   {
+    "sql": "select ';' as a",
+    "start": 0,
+    "end": 15
+   },
+   {
+    "sql": "select 'it''s; fine'",
+    "start": 17,
+    "end": 37
+   }
+  ]
+ },
+ {
+  "text": "select ';' as a; select 'it''s; fine'",
+  "dialect": "mariadb",
+  "out": [
+   {
+    "sql": "select ';' as a",
+    "start": 0,
+    "end": 15
+   },
+   {
+    "sql": "select 'it''s; fine'",
+    "start": 17,
+    "end": 37
+   }
+  ]
+ },
+ {
+  "text": "select \"a;b\" from t; select 2",
+  "dialect": "postgres",
+  "out": [
+   {
+    "sql": "select \"a;b\" from t",
+    "start": 0,
+    "end": 19
+   },
+   {
+    "sql": "select 2",
+    "start": 21,
+    "end": 29
+   }
+  ]
+ },
+ {
+  "text": "select \"a;b\" from t; select 2",
+  "dialect": "mariadb",
+  "out": [
+   {
+    "sql": "select \"a;b\" from t",
+    "start": 0,
+    "end": 19
+   },
+   {
+    "sql": "select 2",
+    "start": 21,
+    "end": 29
+   }
+  ]
+ },
+ {
+  "text": "-- comment; here\nselect 1; /* block; */ select 2",
+  "dialect": "postgres",
+  "out": [
+   {
+    "sql": "-- comment; here\nselect 1",
+    "start": 0,
+    "end": 25
+   },
+   {
+    "sql": "/* block; */ select 2",
+    "start": 27,
+    "end": 48
+   }
+  ]
+ },
+ {
+  "text": "-- comment; here\nselect 1; /* block; */ select 2",
+  "dialect": "mariadb",
+  "out": [
+   {
+    "sql": "-- comment; here\nselect 1",
+    "start": 0,
+    "end": 25
+   },
+   {
+    "sql": "/* block; */ select 2",
+    "start": 27,
+    "end": 48
+   }
+  ]
+ },
+ {
+  "text": "/* only a comment */ ; -- and another\n;",
+  "dialect": "postgres",
+  "out": []
+ },
+ {
+  "text": "/* only a comment */ ; -- and another\n;",
+  "dialect": "mariadb",
+  "out": []
+ },
+ {
+  "text": "create function f() returns int as $$ select 1; $$ language sql; select 2",
+  "dialect": "postgres",
+  "out": [
+   {
+    "sql": "create function f() returns int as $$ select 1; $$ language sql",
+    "start": 0,
+    "end": 63
+   },
+   {
+    "sql": "select 2",
+    "start": 65,
+    "end": 73
+   }
+  ]
+ },
+ {
+  "text": "create function f() returns int as $$ select 1; $$ language sql; select 2",
+  "dialect": "mariadb",
+  "out": [
+   {
+    "sql": "create function f() returns int as $$ select 1",
+    "start": 0,
+    "end": 46
+   },
+   {
+    "sql": "$$ language sql",
+    "start": 48,
+    "end": 63
+   },
+   {
+    "sql": "select 2",
+    "start": 65,
+    "end": 73
+   }
+  ]
+ },
+ {
+  "text": "select $tag$ ; $tag$; select 3",
+  "dialect": "postgres",
+  "out": [
+   {
+    "sql": "select $tag$ ; $tag$",
+    "start": 0,
+    "end": 20
+   },
+   {
+    "sql": "select 3",
+    "start": 22,
+    "end": 30
+   }
+  ]
+ },
+ {
+  "text": "select $tag$ ; $tag$; select 3",
+  "dialect": "mariadb",
+  "out": [
+   {
+    "sql": "select $tag$",
+    "start": 0,
+    "end": 12
+   },
+   {
+    "sql": "$tag$",
+    "start": 15,
+    "end": 20
+   },
+   {
+    "sql": "select 3",
+    "start": 22,
+    "end": 30
+   }
+  ]
+ },
+ {
+  "text": "select a$1; select 2",
+  "dialect": "postgres",
+  "out": [
+   {
+    "sql": "select a$1",
+    "start": 0,
+    "end": 10
+   },
+   {
+    "sql": "select 2",
+    "start": 12,
+    "end": 20
+   }
+  ]
+ },
+ {
+  "text": "select a$1; select 2",
+  "dialect": "mariadb",
+  "out": [
+   {
+    "sql": "select a$1",
+    "start": 0,
+    "end": 10
+   },
+   {
+    "sql": "select 2",
+    "start": 12,
+    "end": 20
+   }
+  ]
+ },
+ {
+  "text": "select 'x\\'; select 2",
+  "dialect": "postgres",
+  "out": [
+   {
+    "sql": "select 'x\\'",
+    "start": 0,
+    "end": 11
+   },
+   {
+    "sql": "select 2",
+    "start": 13,
+    "end": 21
+   }
+  ]
+ },
+ {
+  "text": "select 'x\\'; select 2",
+  "dialect": "mariadb",
+  "out": [
+   {
+    "sql": "select 'x\\'; select 2",
+    "start": 0,
+    "end": 21
+   }
+  ]
+ },
+ {
+  "text": "  \n  select 1  \n ; \n",
+  "dialect": "postgres",
+  "out": [
+   {
+    "sql": "select 1",
+    "start": 5,
+    "end": 13
+   }
+  ]
+ },
+ {
+  "text": "  \n  select 1  \n ; \n",
+  "dialect": "mariadb",
+  "out": [
+   {
+    "sql": "select 1",
+    "start": 5,
+    "end": 13
+   }
+  ]
+ },
+ {
+  "text": "select 1 -- trailing",
+  "dialect": "postgres",
+  "out": [
+   {
+    "sql": "select 1 -- trailing",
+    "start": 0,
+    "end": 20
+   }
+  ]
+ },
+ {
+  "text": "select 1 -- trailing",
+  "dialect": "mariadb",
+  "out": [
+   {
+    "sql": "select 1 -- trailing",
+    "start": 0,
+    "end": 20
+   }
+  ]
+ },
+ {
+  "text": "select '😀;é' as s; select 'ü'",
+  "dialect": "postgres",
+  "out": [
+   {
+    "sql": "select '😀;é' as s",
+    "start": 0,
+    "end": 18
+   },
+   {
+    "sql": "select 'ü'",
+    "start": 20,
+    "end": 30
+   }
+  ]
+ },
+ {
+  "text": "select '😀;é' as s; select 'ü'",
+  "dialect": "mariadb",
+  "out": [
+   {
+    "sql": "select '😀;é' as s",
+    "start": 0,
+    "end": 18
+   },
+   {
+    "sql": "select 'ü'",
+    "start": 20,
+    "end": 30
+   }
+  ]
+ },
+ {
+  "text": "select \"unterminated; select 2",
+  "dialect": "postgres",
+  "out": [
+   {
+    "sql": "select \"unterminated; select 2",
+    "start": 0,
+    "end": 30
+   }
+  ]
+ },
+ {
+  "text": "select \"unterminated; select 2",
+  "dialect": "mariadb",
+  "out": [
+   {
+    "sql": "select \"unterminated; select 2",
+    "start": 0,
+    "end": 30
+   }
+  ]
+ },
+ {
+  "text": "/* unterminated comment; select 2",
+  "dialect": "postgres",
+  "out": []
+ },
+ {
+  "text": "/* unterminated comment; select 2",
+  "dialect": "mariadb",
+  "out": []
+ },
+ {
+  "text": "select `a;b` from t; select 2",
+  "dialect": "postgres",
+  "out": [
+   {
+    "sql": "select `a",
+    "start": 0,
+    "end": 9
+   },
+   {
+    "sql": "b` from t",
+    "start": 10,
+    "end": 19
+   },
+   {
+    "sql": "select 2",
+    "start": 21,
+    "end": 29
+   }
+  ]
+ },
+ {
+  "text": "select `a;b` from t; select 2",
+  "dialect": "mariadb",
+  "out": [
+   {
+    "sql": "select `a;b` from t",
+    "start": 0,
+    "end": 19
+   },
+   {
+    "sql": "select 2",
+    "start": 21,
+    "end": 29
+   }
+  ]
+ },
+ {
+  "text": "select 'a\\';b'; select 2",
+  "dialect": "postgres",
+  "out": [
+   {
+    "sql": "select 'a\\'",
+    "start": 0,
+    "end": 11
+   },
+   {
+    "sql": "b'; select 2",
+    "start": 12,
+    "end": 24
+   }
+  ]
+ },
+ {
+  "text": "select 'a\\';b'; select 2",
+  "dialect": "mariadb",
+  "out": [
+   {
+    "sql": "select 'a\\';b'",
+    "start": 0,
+    "end": 14
+   },
+   {
+    "sql": "select 2",
+    "start": 16,
+    "end": 24
+   }
+  ]
+ },
+ {
+  "text": "# hash comment; x\nselect 1; select 2",
+  "dialect": "postgres",
+  "out": [
+   {
+    "sql": "# hash comment",
+    "start": 0,
+    "end": 14
+   },
+   {
+    "sql": "x\nselect 1",
+    "start": 16,
+    "end": 26
+   },
+   {
+    "sql": "select 2",
+    "start": 28,
+    "end": 36
+   }
+  ]
+ },
+ {
+  "text": "# hash comment; x\nselect 1; select 2",
+  "dialect": "mariadb",
+  "out": [
+   {
+    "sql": "# hash comment; x\nselect 1",
+    "start": 0,
+    "end": 26
+   },
+   {
+    "sql": "select 2",
+    "start": 28,
+    "end": 36
+   }
+  ]
+ },
+ {
+  "text": "select 1 # trailing; comment\n; select 2",
+  "dialect": "postgres",
+  "out": [
+   {
+    "sql": "select 1 # trailing",
+    "start": 0,
+    "end": 19
+   },
+   {
+    "sql": "comment",
+    "start": 21,
+    "end": 28
+   },
+   {
+    "sql": "select 2",
+    "start": 31,
+    "end": 39
+   }
+  ]
+ },
+ {
+  "text": "select 1 # trailing; comment\n; select 2",
+  "dialect": "mariadb",
+  "out": [
+   {
+    "sql": "select 1 # trailing; comment",
+    "start": 0,
+    "end": 28
+   },
+   {
+    "sql": "select 2",
+    "start": 31,
+    "end": 39
+   }
+  ]
+ },
+ {
+  "text": "select 1;;; select 2",
+  "dialect": "postgres",
+  "out": [
+   {
+    "sql": "select 1",
+    "start": 0,
+    "end": 8
+   },
+   {
+    "sql": "select 2",
+    "start": 12,
+    "end": 20
+   }
+  ]
+ },
+ {
+  "text": "select 1;;; select 2",
+  "dialect": "mariadb",
+  "out": [
+   {
+    "sql": "select 1",
+    "start": 0,
+    "end": 8
+   },
+   {
+    "sql": "select 2",
+    "start": 12,
+    "end": 20
+   }
+  ]
+ },
+ {
+  "text": "",
+  "dialect": "postgres",
+  "out": []
+ },
+ {
+  "text": "",
+  "dialect": "mariadb",
+  "out": []
+ },
+ {
+  "text": " ; ; ",
+  "dialect": "postgres",
+  "out": []
+ },
+ {
+  "text": " ; ; ",
+  "dialect": "mariadb",
+  "out": []
+ },
+ {
+  "text": "select 1 /* x */",
+  "dialect": "postgres",
+  "out": [
+   {
+    "sql": "select 1 /* x */",
+    "start": 0,
+    "end": 16
+   }
+  ]
+ },
+ {
+  "text": "select 1 /* x */",
+  "dialect": "mariadb",
+  "out": [
+   {
+    "sql": "select 1 /* x */",
+    "start": 0,
+    "end": 16
+   }
+  ]
+ },
+ {
+  "text": "select   1; select 2",
+  "dialect": "postgres",
+  "out": [
+   {
+    "sql": "select   1",
+    "start": 0,
+    "end": 10
+   },
+   {
+    "sql": "select 2",
+    "start": 12,
+    "end": 20
+   }
+  ]
+ },
+ {
+  "text": "select   1; select 2",
+  "dialect": "mariadb",
+  "out": [
+   {
+    "sql": "select   1",
+    "start": 0,
+    "end": 10
+   },
+   {
+    "sql": "select 2",
+    "start": 12,
+    "end": 20
+   }
+  ]
+ },
+ {
+  "text": "é😀;😀é",
+  "dialect": "postgres",
+  "out": [
+   {
+    "sql": "é😀",
+    "start": 0,
+    "end": 3
+   },
+   {
+    "sql": "😀é",
+    "start": 4,
+    "end": 7
+   }
+  ]
+ },
+ {
+  "text": "é😀;😀é",
+  "dialect": "mariadb",
+  "out": [
+   {
+    "sql": "é😀",
+    "start": 0,
+    "end": 3
+   },
+   {
+    "sql": "😀é",
+    "start": 4,
+    "end": 7
+   }
+  ]
+ }
+]

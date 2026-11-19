@@ -3,5 +3,5 @@
   "printWidth": 140,
   "semi": false,
   "singleQuote": true,
-  "ignorePatterns": ["dist/**", "data/**", "patches/**", "src-tauri/**", "package-lock.json", "*.md"]
+  "ignorePatterns": ["dist/**", "data/**", "patches/**", "src-tauri/**", "server/**", "target/**", "package-lock.json", "*.md"]
 }

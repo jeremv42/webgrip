@@ -1,5 +1,5 @@
 {
-  // The API and the tooling, run by Node itself (type stripping: erasable syntax only, explicit .ts imports)
+  // The shared code and the tooling (erasable syntax only, explicit .ts imports)
   "compilerOptions": {
     "composite": true,
     "tsBuildInfoFile": "node_modules/.tmp/tsconfig.node.tsbuildinfo",
@@ -18,5 +18,5 @@
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["server/**/*.ts", "shared/**/*.ts", "scripts/**/*.ts", "vite.config.ts", "vitest.config.ts"]
+  "include": ["shared/**/*.ts", "vite.config.ts", "vitest.config.ts"]
 }

@@ -1,0 +1,122 @@
+[
+ {
+  "sql": "select 1",
+  "pageable": true,
+  "stripped": "select 1"
+ },
+ {
+  "sql": "  SELECT * from t",
+  "pageable": true,
+  "stripped": "SELECT * from t"
+ },
+ {
+  "sql": "-- hi\nselect 1",
+  "pageable": true,
+  "stripped": "select 1"
+ },
+ {
+  "sql": "/* x */ with a as (select 1) select * from a",
+  "pageable": true,
+  "stripped": "with a as (select 1) select * from a"
+ },
+ {
+  "sql": "# c\nshow tables",
+  "pageable": true,
+  "stripped": "show tables"
+ },
+ {
+  "sql": "values (1)",
+  "pageable": true,
+  "stripped": "values (1)"
+ },
+ {
+  "sql": "table t",
+  "pageable": true,
+  "stripped": "table t"
+ },
+ {
+  "sql": "insert into t values (1)",
+  "pageable": false,
+  "stripped": "insert into t values (1)"
+ },
+ {
+  "sql": "with x as (delete from t returning *) select * from x",
+  "pageable": false,
+  "stripped": "with x as (delete from t returning *) select * from x"
+ },
+ {
+  "sql": "select * into t2 from t",
+  "pageable": false,
+  "stripped": "select * into t2 from t"
+ },
+ {
+  "sql": "select * from t for update",
+  "pageable": false,
+  "stripped": "select * from t for update"
+ },
+ {
+  "sql": "select * from t for no key update",
+  "pageable": false,
+  "stripped": "select * from t for no key update"
+ },
+ {
+  "sql": "select * from t for share",
+  "pageable": false,
+  "stripped": "select * from t for share"
+ },
+ {
+  "sql": "select * from t lock in share mode",
+  "pageable": false,
+  "stripped": "select * from t lock in share mode"
+ },
+ {
+  "sql": "select nextval('s')",
+  "pageable": false,
+  "stripped": "select nextval('s')"
+ },
+ {
+  "sql": "select setval(1)",
+  "pageable": false,
+  "stripped": "select setval(1)"
+ },
+ {
+  "sql": "explain select 1",
+  "pageable": false,
+  "stripped": "explain select 1"
+ },
+ {
+  "sql": "update t set a = 1",
+  "pageable": false,
+  "stripped": "update t set a = 1"
+ },
+ {
+  "sql": "selectx",
+  "pageable": false,
+  "stripped": "selectx"
+ },
+ {
+  "sql": "",
+  "pageable": false,
+  "stripped": ""
+ },
+ {
+  "sql": "/* unterminated",
+  "pageable": false,
+  "stripped": "/* unterminated"
+ },
+ {
+  "sql": "select 'insert'",
+  "pageable": false,
+  "stripped": "select 'insert'"
+ },
+ {
+  "sql": "SHOW databases",
+  "pageable": true,
+  "stripped": "SHOW databases"
+ },
+ {
+  "sql": "-- a\n-- b\n/* c */  select 2",
+  "pageable": true,
+  "stripped": "select 2"
+ }
+]

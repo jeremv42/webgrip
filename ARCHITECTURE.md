@@ -1,15 +1,18 @@
 # Architecture
 
-WebGrip is a minimal web SQL client (PostgreSQL and MariaDB/MySQL): a Vue SPA that talks JSON to a small Node API.
-The code (TypeScript) is about 3,000 lines without tests, with no database of its own and no front-end store.
+WebGrip is a minimal web SQL client (PostgreSQL and MariaDB/MySQL): a Vue SPA (TypeScript) that talks JSON to a small
+Rust API, with no database of its own and no front-end store. The same API runs on its own behind Vite (the web install)
+or inside the desktop app (Tauri).
 
 ## Technologies
 
 | Layer | Tech | Role |
 |---|---|---|
-| Backend | **Node.js** (ESM, TypeScript run directly), **Express 5** | JSON REST API |
-| | **pg** + **pg-cursor** | PostgreSQL driver; the cursor only reads `maxRows + 1` rows |
-| | **mysql2** | MariaDB/MySQL driver; rows are streamed, only the first `maxRows` are kept |
+| Backend | **Rust**: **tokio**, **axum** | JSON REST API (`server/`, crate `webgrip-server`: a library + the `webgrip-server` binary) |
+| | **postgres-protocol** (a small client of our own on it, `drivers/postgres/conn.rs`) | PostgreSQL: values as the server prints them, portals read `maxRows + 1` rows |
+| | **mysql_async** | MariaDB/MySQL; rows are streamed, only the first `maxRows` are kept |
+| | **rustls** (ring), **aes-gcm** + **scrypt**, **hmac** | TLS to the databases, encryption of the connections file, session cookies |
+| Desktop | **Tauri v2** (`src-tauri/`) | Native window on the system's webview; runs the API in-process |
 | Front end | **Vue 3** (`<script setup>`, Composition API) | SPA, state local to components, no Pinia nor router |
 | | **Vuetify 4** (+ `vite-plugin-vuetify` auto-import, `@mdi/font` icons) | UI components, light/dark theme |
 | | **Monaco Editor** (core + features, without the built-in languages) | SQL editor: shortcuts, menu, search… |
@@ -17,36 +20,51 @@ The code (TypeScript) is about 3,000 lines without tests, with no database of it
 | | **patch-package** | Local fix of `dt-sql-parser` (`patches/`), reapplied on every `npm install` |
 | Tooling | **Vite 8** | Dev server, build, `preview` and `/api` proxy |
 | | **concurrently** | Runs the API and Vite together (`npm run dev` / `npm start`) |
-| | **TypeScript** (`vue-tsc` for the SPA, `tsc` for the API) | Type checking only (`npm run typecheck`): Vite compiles the front end, Node strips the API's types |
-| | **oxlint** / **oxfmt** (oxc) | Lint (`npm run lint`) and formatting (`npm run format`) |
-| | **Vitest** (+ `@vue/test-utils`, `happy-dom`) | Unit and component tests (`npm test`) |
+| | **TypeScript** (`vue-tsc` for the SPA, `tsc` for `shared/` and the configs) | Type checking only (`npm run typecheck`): Vite compiles the front end |
+| | **oxlint** / **oxfmt** (oxc), **clippy** / **rustfmt** | Lint (`npm run lint`) and formatting (`npm run format`), TS and Rust |
+| | **Vitest** (+ `@vue/test-utils`, `happy-dom`), **cargo test** | Tests (`npm test` runs both) |
 
 ## Layout
 
 ```
 webgrip/
-├── server/                    Backend (API only, listens on 127.0.0.1:3070 only), run as is by Node (type stripping)
-│   ├── index.ts               Entry point: reads .env and the environment, then listens
-│   ├── desktop.ts             Entry point of the desktop app's server (launch token, free port, serves dist/)
-│   ├── app.ts                 Express createApp(): routes, saved connections, driver cache
-│   ├── auth.ts                Password, signed session cookie, guard of the /api routes
-│   ├── vault.ts               AES-256-GCM encryption of the connections file
-│   ├── describe.ts            Structure export as Markdown (to paste into a chat, and the chat's describe_schema tool)
-│   ├── chat.ts                Chat with Claude: runs the Claude Code CLI, serves its database tools over MCP (/mcp)
-│   └── drivers/
-│       ├── types.ts           Common Driver interface
-│       ├── plan.ts            Helpers shared by the plan parsers
-│       ├── edit.ts            Cell editing: the table a result can be updated in, UPDATE builder
-│       ├── postgres/
-│       │   ├── driver.ts      PostgresDriver
-│       │   └── plan.ts        EXPLAIN (FORMAT JSON) → plan tree
-│       └── mariadb/
-│           ├── driver.ts      MariadbDriver
-│           └── plan.ts        EXPLAIN / ANALYZE FORMAT=JSON and MySQL's text tree → plan tree
+├── Cargo.toml                 Cargo workspace: server/ and src-tauri/ (one target/, one Cargo.lock)
+├── server/                    Backend (Rust crate webgrip-server)
+│   ├── src/
+│   │   ├── main.rs            Web install: reads .env and the environment, listens on 127.0.0.1:3070 only
+│   │   ├── desktop.rs         Desktop app: launch token, free port, Host check, serves dist/, key in the data folder
+│   │   ├── app.rs             create_app(): routes, saved connections, driver cache, the /api guard
+│   │   ├── auth.rs            Password, signed session cookie
+│   │   ├── vault.rs           AES-256-GCM encryption of the connections file
+│   │   ├── describe.rs        Structure export as Markdown (to paste into a chat, and the chat's describe_schema tool)
+│   │   ├── chat.rs            Chat with Claude: runs the Claude Code CLI, serves its database tools over MCP (/mcp)
+│   │   ├── chat_text.rs       The chat's text: TSV results, schema within a budget, CLI stream → events
+│   │   ├── sql.rs             Statement splitting, pageable / read-only statements (Rust copy of shared/*.ts)
+│   │   ├── types.rs           Rust side of shared/types.ts
+│   │   ├── js.rs              JS semantics kept from the first version (number formatting, UTF-16 lengths…)
+│   │   └── drivers/
+│   │       ├── mod.rs         Common Driver trait
+│   │       ├── plan.rs        Helpers shared by the plan parsers
+│   │       ├── edit.rs        Cell editing: the table a result can be updated in, UPDATE builder
+│   │       ├── postgres/
+│   │       │   ├── conn.rs    Wire-protocol client: TLS, auth (SCRAM, MD5), text results, portals, notices
+│   │       │   ├── mod.rs     PostgresDriver
+│   │       │   └── plan.rs    EXPLAIN (FORMAT JSON) → plan tree
+│   │       └── mariadb/
+│   │           ├── mod.rs     MariadbDriver (values as mysql2 gave them)
+│   │           ├── errors.rs  Error numbers → names (ER_NO_SUCH_TABLE…), generated from mysql2's list
+│   │           └── plan.rs    EXPLAIN / ANALYZE FORMAT=JSON and MySQL's text tree → plan tree
+│   └── tests/
+│       ├── api.rs             The HTTP API with a fake driver (and a fake `claude` CLI for the chat)
+│       ├── databases.rs       The drivers against real databases (WEBGRIP_TEST_PG / WEBGRIP_TEST_MYSQL, else skipped)
+│       ├── golden.rs          Pure functions against tests/golden/*.json
+│       └── golden/            Expected outputs, first written by the TypeScript server this one replaced
+├── src-tauri/                 Desktop app (Tauri v2): main.rs, tauri.conf.json, splash page, icons
 ├── shared/
 │   ├── types.ts               Types exchanged as JSON between the API and the SPA (connections, results, completion…)
 │   ├── pageable.ts            Whether a statement only reads (can be run again to page), leading comments skipped
-│   └── splitSql.ts            Splits a SQL script into statements (used by the server AND the editor)
+│   ├── splitSql.ts            Splits a SQL script into statements (the editor; the server has a Rust copy)
+│   └── golden.test.ts         Checks both copies agree (the server's golden files)
 ├── client/                    Front end (Vite root)
 │   ├── index.html
 │   └── src/
@@ -71,12 +89,6 @@ webgrip/
 │           ├── sources.ts             Completion without Monaco: names, schema index, tables read by the statement
 │           ├── pgsql.worker.ts        Entry point of the PostgreSQL parser worker
 │           └── mysql.worker.ts        Entry point of the MySQL/MariaDB parser worker
-├── src-tauri/                 Desktop app (Tauri v2)
-│   ├── src/main.rs            Starts the server sidecar, points the window at it, kills it on exit
-│   ├── tauri.conf.json        Bundle: sidecar (externalBin), dist/ (resources), icons, splash page
-│   ├── splash/index.html      Shown until the server is up (or with its error)
-│   └── binaries/              The server as a single executable (`npm run desktop:prepare`, ignored by git)
-├── scripts/build-sidecar.ts   rolldown bundle of server/desktop.ts + node --build-sea → src-tauri/binaries/
 ├── patches/                   patch-package fixes of dependencies
 ├── **/*.test.ts               Vitest tests, next to the tested code (plan parsers: real EXPLAIN outputs in plan.fixtures.json)
 ├── data/connections.json      Saved connections, encrypted (created at run time, ignored by git)
@@ -91,43 +103,38 @@ webgrip/
 ## Network
 
 ```
-browser ──► Vite :5180 ──(/api/*)──► Express API 127.0.0.1:3070 ──► PostgreSQL / MariaDB
+browser ──► Vite :5180 ──(/api/*)──► webgrip-server 127.0.0.1:3070 ──► PostgreSQL / MariaDB
               └── serves the SPA (dev: sources on the fly, preview: dist/)
 ```
 
 - A single port for the browser: Vite serves the front end and proxies `/api` to the backend, which is **never** exposed (address `127.0.0.1` hard-coded).
 - Vite listens on the IP of the `tailscale0` interface; in `npm run dev`, a small plugin (`localhostForward` in `vite.config.ts`) forwards `127.0.0.1:5180` to that address to keep `localhost` usable. `allowedHosts` allows the machine name and `*.ts.net` (MagicDNS). Without Tailscale, Vite stays on localhost.
-- `npm start` = API + `vite preview` of the build, on the same address as the dev server.
-- Variables: `WEBGRIP_PASSWORD`, `WEBGRIP_SECRET`, `WEB_PORT` (5180), `PORT` (internal API port, 3070), `WEBGRIP_DATA` (connections file). `server/index.ts` reads `.env` when it exists (`process.loadEnvFile`, variables already set win) and refuses to start without a password and a secret.
+- `npm run dev` = `cargo run` of the API (restart it after a server change) + Vite. `npm run build` builds the SPA and the
+  release binary; `npm start` = that binary + `vite preview`, on the same address as the dev server.
+- Variables: `WEBGRIP_PASSWORD`, `WEBGRIP_SECRET`, `WEB_PORT` (5180), `PORT` (internal API port, 3070), `WEBGRIP_DATA` (connections file). `server/src/main.rs` reads the `.env` of the working directory when it exists (variables already set win) and refuses to start without a password and a secret.
 
 ## Desktop app (`src-tauri/`)
 
 ```
-Tauri window (system webview) ──► webgrip-server 127.0.0.1:<free port> ──► PostgreSQL / MariaDB
-   └── splash page until the port is known      └── serves dist/ and /api, no Vite
+Tauri window (system webview) ──► webgrip-server (same process) 127.0.0.1:<free port> ──► PostgreSQL / MariaDB
+   └── splash page until it listens            └── serves dist/ and /api, no Vite
 ```
 
-- The same SPA and API as the web version. The Tauri shell (`main.rs`) only starts the server, waits for the
-  `WEBGRIP_PORT=<port>` line on its stdout, and navigates its window to it. The window has no Tauri IPC
-  (no capability): it is a plain web page, limited by `on_navigation` to the server's origin and the splash page.
-- The server is `server/desktop.ts`, bundled with its dependencies by rolldown (CommonJS, `pg-native` left out)
-  and made a single executable by `node --build-sea` (`scripts/build-sidecar.ts`), named
-  `webgrip-server-<target triple>` as Tauri wants for an `externalBin`. No Node needed on the target machine.
-  The price is its size: ~150 MB (the Node runtime), ~50 MB compressed in the packages.
-- **No password**: each launch draws a random 32-byte token, passed to the server as `WEBGRIP_LAUNCH_TOKEN`
-  (it is the `password` of `createApp`, with `desktop: true`). The window first opens
-  `/api/desktop-login?token=…`, which sets the usual session cookie and redirects to `/`. Cookies of a previous
-  launch are invalid (they are signed with the old token). `Features.desktop` hides the Log out button.
-- The server only answers the `Host` `127.0.0.1:<port>` (421 otherwise): a site reaching it through DNS rebinding
-  gets nothing, and has no cookie anyway.
-- Data: `connections.json` and its key `secret.key` (random, mode `600`, made at the first launch) live in the
-  app's data folder (`~/.local/share/dev.webgrip.desktop` on Linux, `~/Library/Application Support/…` on macOS,
+- The same SPA and API as the web version. The Tauri shell (`main.rs`) calls `webgrip_server::desktop::start` on
+  Tauri's tokio runtime, then navigates its window to the server. There is no separate server process. The window has
+  no Tauri IPC (no capability): it is a plain web page, limited by `on_navigation` to the server's origin and the
+  splash page.
+- **No password**: each launch draws a random 32-byte token (the `password` of `create_app`, with `desktop: true`). The
+  window first opens `/api/desktop-login?token=…`, which sets the usual session cookie and redirects to `/`. Cookies of
+  a previous launch are invalid (they are signed with the old token). `Features.desktop` hides the Log out button.
+- The server only answers the `Host` `127.0.0.1:<port>` (421 otherwise): a site reaching it through DNS rebinding gets
+  nothing, and has no cookie anyway.
+- Data: `connections.json` and its key `secret.key` (random, mode `600`, made at the first launch) live in the app's
+  data folder (`~/.local/share/dev.webgrip.desktop` on Linux, `~/Library/Application Support/…` on macOS,
   `%APPDATA%\…` on Windows). The key sits next to the file, so only the file permissions protect it (no OS keychain yet).
 - Chat: on when a `claude` executable is found (`PATH`, then `~/.local/bin`, `~/.claude/local`, `/usr/local/bin`,
   `/opt/homebrew/bin`, since an app started from the desktop often lacks the shell's `PATH`); `WEBGRIP_CHAT=0` turns
   it off, `WEBGRIP_CHAT_RUN_QUERY` / `WEBGRIP_CHAT_MODEL` / `WEBGRIP_CLAUDE_BIN` work as in the web version.
-- Lifetime: the shell kills the server on exit, and the server exits when its stdin closes (the shell is gone,
-  even after a crash).
 
 ## Backend
 
@@ -151,7 +158,8 @@ Tauri window (system webview) ──► webgrip-server 127.0.0.1:<free port> ─
 | POST | `/api/c/:id/rows` | `{ db, schema, sql, offset, count }` → `{ rows, truncated, total? }`: rows after the row limit (read-only statements only, `count` ≤ 100,000) |
 | POST | `/api/c/:id/save` | `{ db, schema, target: { schema, table }, changes: [{ key, set }] }` → `{ updated }`: edited rows (see Cell editing) |
 | POST | `/api/c/:id/cancel` | `{ db }`: cancels the running query |
-| GET | `/api/features` | `{ chat, chatRunQuery }`: what the server enables |
+| GET | `/api/features` | `{ chat, chatRunQuery, desktop }`: what the server enables |
+| GET | `/api/desktop-login?token=` | Desktop app only: the launch token → session cookie, then `303` to `/` |
 | POST | `/api/c/:id/chat` | `{ message, sessionId?, db, schema }` → NDJSON stream of `ChatEvent` (only with `WEBGRIP_CHAT`, see Chat) |
 | POST | `/mcp` | Not under `/api` (never proxied): MCP endpoint of the chat's tools, for the CLI process only (bearer token) |
 
@@ -160,7 +168,7 @@ Errors are returned as `4xx` with `{ error }`. SQL errors, however, are part of 
 
 ### Drivers
 
-`app.ts` lazily creates one driver per saved connection and drops it when the connection is edited or deleted. Both drivers implement the `Driver` interface (`server/drivers/types.ts`):
+`app.rs` lazily creates one driver per saved connection and drops it when the connection is edited or deleted. Both drivers implement the `Driver` trait (`server/src/drivers/mod.rs`):
 
 ```
 hasSchemas
@@ -171,13 +179,13 @@ run(db, schema, statements, maxRows, explain?) · page(db, schema, sql, offset, 
 Each driver handles two kinds of connections:
 
 - **Metadata**: a small pool (Postgres: one pool per database, since a Postgres connection is bound to a database; MariaDB: a single pool, queries name the database).
-- **Editor session**: one dedicated connection per database, which runs statements one after the other. `BEGIN`, `SET` and temporary tables therefore persist from one run to the next, as in DataGrip. One run at a time per session (`busy`); cancelling goes through the metadata pool (`pg_cancel_backend(pid)` / `KILL QUERY threadId`).
+- **Editor session**: one dedicated connection per database, which runs statements one after the other. `BEGIN`, `SET` and temporary tables therefore persist from one run to the next, as in DataGrip. One run at a time per session (`busy`); cancelling goes through the metadata pool (`pg_cancel_backend(pid)` / `KILL QUERY threadId`). `run`, `page` and `save` run in a task of their own, so a client that goes away (closed tab) never leaves a session halfway through an exchange; a Postgres connection found out of step anyway is replaced.
 
 Specifics:
 
-- **Postgres**: values are returned as the server sends them in text (no conversion to `Date`, number or JSON), which keeps dates, `numeric`, `int8` and `bytea` exact. Statements that return rows (`SELECT`, `WITH`, `VALUES`, `SHOW`, `EXPLAIN`…) go through a cursor; the others through a simple query. The chosen schema is applied with `SET search_path`. `NOTICE`s are collected per statement. Type names come from `pg_type` (cached).
+- **Postgres**: a small client of our own on the wire protocol (`conn.rs`), because the usual Rust clients only read binary results: values are returned as the server prints them in text (no conversion to dates, numbers or JSON), which keeps dates, `numeric`, `int8`, arrays, ranges, intervals and `bytea` exact. Statements that return rows (`SELECT`, `WITH`, `VALUES`, `SHOW`, `EXPLAIN`…) go through a portal read `maxRows + 1` rows at a time; the others through a simple query. TLS does not check certificates (as before). The chosen schema is applied with `SET search_path`. `NOTICE`s are collected per statement. Type names come from `pg_type` (cached).
 - **EXPLAIN**: with `explain`, each statement (unless it already is an EXPLAIN) gets a prefix: Postgres `EXPLAIN ([ANALYZE, BUFFERS, ]FORMAT JSON)`, MySQL/MariaDB `EXPLAIN FORMAT=JSON`, and for ANALYZE `ANALYZE FORMAT=JSON` (MariaDB) or `EXPLAIN ANALYZE` (MySQL, text tree only). ANALYZE runs the statement, so the driver first opens a transaction (`BEGIN` … `ROLLBACK`), or a savepoint when the session is already in one (Postgres: `getTransactionStatus()`; MySQL: the `SERVER_STATUS_IN_TRANS` flag of a `DO 0`). A failure there (aborted transaction) is the statement's error, and the statement is not run. Postgres error positions are shifted back by the prefix length. The result carries `explain`. Any result that is an EXPLAIN output (ours or typed by the user) also carries `plan`, parsed by the driver (see Plans below), next to the raw rows.
-- **MariaDB**: options `dateStrings`, `bigNumberStrings`, `jsonStrings` keep textual values; BLOBs are converted to `0x…`. The session is opened directly on the chosen database. Warnings are read with `SHOW WARNINGS`.
+- **MariaDB**: values keep the shapes mysql2 gave them (`dateStrings`, `bigNumberStrings`, `jsonStrings`): integers and floats as numbers; `BIGINT`, `DECIMAL`, dates and JSON as text; binary strings, `BIT` and geometries as `0x…`. Error codes are mysql2's names (`ER_…`). The session is opened directly on the chosen database. A command's warnings are read with `SHOW WARNINGS` (not a result set's: MySQL adds a note with the rewritten query to every EXPLAIN).
 
 ### Result format
 
@@ -191,9 +199,9 @@ Specifics:
 
 Rows are arrays (not objects) to support duplicate column names. `start`/`end` are the statement's positions in the text sent: the front end uses them, with `error.position`, to place the cursor on the error.
 
-## SQL splitting (`shared/splitSql.ts`)
+## SQL splitting (`shared/splitSql.ts`, `server/src/sql.rs`)
 
-A single module, imported by the server (to run statement by statement) and by the editor (to find the statement under the cursor). It splits on `;`, ignoring those inside strings `'…'`, identifiers `"…"` / `` `…` ``, comments `--`, `#` (MariaDB) and `/* */`, and `$tag$…$tag$` blocks (Postgres). It returns `{ sql, start, end }` for each statement.
+Two copies of the same algorithm: the editor's (TS, to find the statement under the cursor) and the server's (Rust, to run statement by statement), with UTF-16 offsets as the editor counts. `shared/golden.test.ts` and `server/tests/golden.rs` check both against the same golden files (`server/tests/golden/split.json`, `pageable.json`), so a change to one must be made to the other. It splits on `;`, ignoring those inside strings `'…'`, identifiers `"…"` / `` `…` ``, comments `--`, `#` (MariaDB) and `/* */`, and `$tag$…$tag$` blocks (Postgres). It returns `{ sql, start, end }` for each statement.
 
 ## Editor and completion (`SqlEditor.vue`)
 
@@ -214,14 +222,14 @@ A single module, imported by the server (to run statement by statement) and by t
 - **Editor tabs**: `App.vue` holds the current connection's tabs (`tabs.ts`) and each tab's results, in memory only. `SqlEditor` receives the tab id (`docId`) and keeps one Monaco model per tab: text, undo history, cursor and scroll belong to each tab. A run stores its results in the tab that started it, even if the user has switched to another one meanwhile. All runs go through the same database session, one at a time.
 - **Execution flow**: `SqlEditor` emits `run({ sql, offset })` (selection, statement under the cursor or whole script) → `App.vue` calls `/query` with the current database and schema → `ResultPanel` shows one tab per result and opens the first error if there is one.
 - **Tree** (`DbTree.vue`): nodes loaded when opened, rendered flat (computed indentation) to stay light; a click on a database/schema changes the editor's context, a double-click on a table appends and runs `SELECT * … LIMIT n`.
-- **Plans**: each driver's `planOf(columns, rows)` (`server/drivers/<engine>/plan.ts`) recognizes a plan by its single cell (Postgres: `QUERY PLAN` json; MySQL/MariaDB: `EXPLAIN` / `ANALYZE` JSON or `->` tree) and normalizes it into the shared `Plan` type (`shared/types.ts`): title, details, estimated / actual rows over all loops, cost, inclusive and exclusive time. Postgres times and costs are inclusive (exclusive = node − children); MySQL/MariaDB JSON gives each table or sort its own figures and the query block its total, so containers are rolled up from their children. `PlanView.vue` switches between this tree and the raw output (JSON indented), the choice kept in `localStorage`. The bars show each node's exclusive share of the total; a ×10 gap between actual and estimated rows is flagged (except a shortfall under a LIMIT).
+- **Plans**: each driver's `plan_of(columns, rows)` (`server/src/drivers/<engine>/plan.rs`) recognizes a plan by its single cell (Postgres: `QUERY PLAN` json; MySQL/MariaDB: `EXPLAIN` / `ANALYZE` JSON or `->` tree) and normalizes it into the shared `Plan` type (`shared/types.ts`): title, details, estimated / actual rows over all loops, cost, inclusive and exclusive time. Postgres times and costs are inclusive (exclusive = node − children); MySQL/MariaDB JSON gives each table or sort its own figures and the query block its total, so containers are rolled up from their children. `PlanView.vue` switches between this tree and the raw output (JSON indented), the choice kept in `localStorage`. The bars show each node's exclusive share of the total; a ×10 gap between actual and estimated rows is flagged (except a shortfall under a LIMIT).
 - **Grid** (`ResultGrid.vue`): a plain HTML `<table>` (sticky header and row numbers), rather than a `v-data-table`, to keep control of rendering and density.
   - *Virtualization*: every row is exactly 24 px (one line, `nowrap`), so the rows on screen follow from `scrollTop`; only they (plus 10 above and below) are rendered, between two spacer rows of the right height. 20,000 rows render about 35 `<tr>`.
   - *Widths*: `table-layout: fixed` with a `<colgroup>`, so widths do not change while scrolling. Each column gets the width of its header or longest value (monospace: characters × measured character width), up to 420 px; dragging a header's edge resizes it, double-clicking the edge fits the content up to 800 px.
   - *Rows after the limit*: a truncated result of a read-only statement (`shared/pageable.ts`: `SELECT`/`WITH`/`VALUES`/`TABLE`/`SHOW` without DML, `INTO`, locking clause or sequence call) offers **Load more** / **Load all**. `POST /rows` runs the statement again on the editor session and skips the rows already shown: Postgres through a cursor read by batches of 5,000, MySQL/MariaDB while streaming. No SQL is rewritten (any `ORDER BY`, `LIMIT` or duplicate column name keeps working), at the cost of running the query again; without an `ORDER BY` the order may differ between runs. The page is appended to the result's rows (edits, keyed by row index, stay valid).
   - *Quick filter* (debounced) keeps the rows where a shown column contains the text, case-insensitive. *Hidden columns* (Columns menu) are left out of the grid, the filter and the TSV copy; both are kept when the next result has the same column names.
   - *Copy*: the hovered cell (tracked by delegation on `tbody`) shows a copy button when the column is at least 72 px wide and the value is not NULL.
-- **Cell editing**: the driver tells whether a result is editable (`editable`: schema, table, the table column behind each result column, primary key). Postgres gives each field's `tableID` / `columnID`, read in `pg_attribute` / `pg_index`; MySQL/MariaDB give `orgTable` / `orgName`, read in `information_schema`. `edit.ts` keeps the one table whose whole primary key is in the result, each of its columns shown once (no self-join); only its columns are editable, minus generated ones (and binary ones in MySQL, shown as hex). A failed lookup only makes the result read-only. In the grid, a double-click edits in place (Enter / Escape; Shift+double-click, multi-line or long values: a dialog with a NULL box); edits are kept per result (`WeakMap`), so switching result tabs keeps them, and drawn as pending until **Save**. Save groups them by row (`{ key: values read, set: new values }`) and `POST /save` runs parameterized `UPDATE`s on the editor session, in a transaction (or a savepoint inside the user's own, refused in a failed one); each must match exactly one row (MySQL: `Rows matched` from the info, since `affectedRows` skips unchanged rows), otherwise everything is rolled back and the edits stay pending.
+- **Cell editing**: the driver tells whether a result is editable (`editable`: schema, table, the table column behind each result column, primary key). Postgres gives each field's table oid / column number, read in `pg_attribute` / `pg_index`; MySQL/MariaDB give `org_table` / `org_name`, read in `information_schema`. `edit.rs` keeps the one table whose whole primary key is in the result, each of its columns shown once (no self-join); only its columns are editable, minus generated ones (and binary ones in MySQL, shown as hex). A failed lookup only makes the result read-only. In the grid, a double-click edits in place (Enter / Escape; Shift+double-click, multi-line or long values: a dialog with a NULL box); edits are kept per result (`WeakMap`), so switching result tabs keeps them, and drawn as pending until **Save**. Save groups them by row (`{ key: values read, set: new values }`) and `POST /save` runs parameterized `UPDATE`s on the editor session, in a transaction (or a savepoint inside the user's own, refused in a failed one); each must match exactly one row (MySQL: `Rows matched` from the info, since `affectedRows` skips unchanged rows), otherwise everything is rolled back and the edits stay pending.
 
 ## Chat with Claude (`WEBGRIP_CHAT`)
 
@@ -236,14 +244,14 @@ claude -p --output-format stream-json --verbose --include-partial-messages --too
 
 - **No built-in tool** (`--tools ""`: no shell, files nor web), no user / project settings, hooks or other MCP servers;
   anything not allowed is denied (`dontAsk`). The only tools are WebGrip's, scoped to the chat's connection:
-  `list_databases`, `list_tables`, `describe_schema` (the Markdown of `describe.ts`: structure only) and, only with
+  `list_databases`, `list_tables`, `describe_schema` (the Markdown of `describe.rs`: structure only) and, only with
   `WEBGRIP_CHAT_RUN_QUERY=1`, `run_query`.
 - **Size**: every tool result is capped at 40,000 characters (≈ 10k tokens), under the CLI's limit for an MCP result
-  (25k tokens), above which it saves the result to a file this Claude cannot read. `describe_schema` (`describeForChat`)
+  (25k tokens), above which it saves the result to a file this Claude cannot read. `describe_schema` (`describe_for_chat`)
   gives the full Markdown when it fits; else an overview as detailed as fits (one line per table: columns with types,
   PK and `→` foreign keys; then column names only; then table names), and its `tables` argument gives the full detail
   of the tables asked for.
-- **MCP**: `server/chat.ts` serves them itself on `/mcp` (JSON-RPC over HTTP, JSON answers, no SSE): a random token per
+- **MCP**: `server/src/chat.rs` serves them itself on `/mcp` (JSON-RPC over HTTP, JSON answers, no SSE): a random token per
   run maps to `{ connection, db, schema }` and dies with the process; it is written to a private config file
   (`data/chat/mcp-*.json`, mode 600, deleted afterwards) rather than on the command line. `/mcp` is outside `/api`, so
   Vite never proxies it: only local processes reach it.
@@ -260,7 +268,7 @@ claude -p --output-format stream-json --verbose --include-partial-messages --too
   context follows the UI. The `init` event gives the CLI's session id; the next message passes it back (`--resume`).
   The CLI runs in `data/chat/` (stable, so its sessions resume). The panel keeps the conversation per connection in
   `localStorage` (`chat.<id>`, last 60 messages).
-- **Stream**: stdout lines are mapped (`toEvents`) to `session`, `text` (deltas), `tool`, `tool_result`, `done { error? }`.
+- **Stream**: stdout lines are mapped (`to_events`) to `session`, `text` (deltas), `tool`, `tool_result`, `done { error? }`.
   Closing the request (Stop, changing connection) kills the process; a failure without a result gives `done` with the
   end of stderr (e.g. not logged in).
 - **Rendering**: answers are Markdown (`marked`), sanitized by DOMPurify; code blocks get Copy, and SQL ones Insert

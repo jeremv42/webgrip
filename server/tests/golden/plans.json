@@ -1,0 +1,898 @@
+[
+ {
+  "engine": "pg",
+  "columns": [
+   {
+    "name": "QUERY PLAN",
+    "type": "json"
+   }
+  ],
+  "rows": [
+   [
+    "[\n  {\n    \"Plan\": {\n      \"Node Type\": \"Limit\",\n      \"Parallel Aware\": false,\n      \"Async Capable\": false,\n      \"Startup Cost\": 1143.02,\n      \"Total Cost\": 1143.05,\n      \"Plan Rows\": 10,\n      \"Plan Width\": 45,\n      \"Plans\": [\n        {\n          \"Node Type\": \"Sort\",\n          \"Parent Relationship\": \"Outer\",\n          \"Parallel Aware\": false,\n          \"Async Capable\": false,\n          \"Startup Cost\": 1143.02,\n          \"Total Cost\": 1143.77,\n          \"Plan Rows\": 299,\n          \"Plan Width\": 45,\n          \"Sort Key\": [\"(sum(o.total)) DESC\"],\n          \"Plans\": [\n            {\n              \"Node Type\": \"Aggregate\",\n              \"Strategy\": \"Hashed\",\n              \"Partial Mode\": \"Simple\",\n              \"Parent Relationship\": \"Outer\",\n              \"Parallel Aware\": false,\n              \"Async Capable\": false,\n              \"Startup Cost\": 1132.82,\n              \"Total Cost\": 1136.56,\n              \"Plan Rows\": 299,\n              \"Plan Width\": 45,\n              \"Group Key\": [\"c.name\"],\n              \"Planned Partitions\": 0,\n              \"Plans\": [\n                {\n                  \"Node Type\": \"Hash Join\",\n                  \"Parent Relationship\": \"Outer\",\n                  \"Parallel Aware\": false,\n                  \"Async Capable\": false,\n                  \"Join Type\": \"Inner\",\n                  \"Startup Cost\": 22.25,\n                  \"Total Cost\": 1083.04,\n                  \"Plan Rows\": 6638,\n                  \"Plan Width\": 9,\n                  \"Inner Unique\": true,\n                  \"Hash Cond\": \"(o.customer_id = c.id)\",\n                  \"Plans\": [\n                    {\n                      \"Node Type\": \"Seq Scan\",\n                      \"Parent Relationship\": \"Outer\",\n                      \"Parallel Aware\": false,\n                      \"Async Capable\": false,\n                      \"Relation Name\": \"orders\",\n                      \"Alias\": \"o\",\n                      \"Startup Cost\": 0.00,\n                      \"Total Cost\": 944.00,\n                      \"Plan Rows\": 44398,\n                      \"Plan Width\": 8,\n                      \"Filter\": \"(total > '10'::numeric)\"\n                    },\n                    {\n                      \"Node Type\": \"Hash\",\n                      \"Parent Relationship\": \"Inner\",\n                      \"Parallel Aware\": false,\n                      \"Async Capable\": false,\n                      \"Startup Cost\": 18.51,\n                      \"Total Cost\": 18.51,\n                      \"Plan Rows\": 299,\n                      \"Plan Width\": 9,\n                      \"Plans\": [\n                        {\n                          \"Node Type\": \"Index Scan\",\n                          \"Parent Relationship\": \"Outer\",\n                          \"Parallel Aware\": false,\n                          \"Async Capable\": false,\n                          \"Scan Direction\": \"Forward\",\n                          \"Index Name\": \"customers_pkey\",\n                          \"Relation Name\": \"customers\",\n                          \"Alias\": \"c\",\n                          \"Startup Cost\": 0.28,\n                          \"Total Cost\": 18.51,\n                          \"Plan Rows\": 299,\n                          \"Plan Width\": 9,\n                          \"Index Cond\": \"(id < 300)\"\n                        }\n                      ]\n                    }\n                  ]\n                }\n              ]\n            }\n          ]\n        }\n      ]\n    }\n  }\n]"
+   ]
+  ],
+  "plan": {
+   "analyze": false,
+   "root": {
+    "title": "Limit",
+    "details": [],
+    "estRows": 10,
+    "cost": 1143.05,
+    "children": [
+     {
+      "title": "Sort",
+      "details": [
+       "Sort Key: (sum(o.total)) DESC"
+      ],
+      "estRows": 299,
+      "cost": 1143.77,
+      "children": [
+       {
+        "title": "HashAggregate",
+        "details": [
+         "Group Key: c.name"
+        ],
+        "estRows": 299,
+        "cost": 1136.56,
+        "children": [
+         {
+          "title": "Hash Join",
+          "details": [
+           "Hash Cond: (o.customer_id = c.id)"
+          ],
+          "estRows": 6638,
+          "cost": 1083.04,
+          "children": [
+           {
+            "title": "Seq Scan on orders o",
+            "details": [
+             "Filter: (total > '10'::numeric)"
+            ],
+            "estRows": 44398,
+            "cost": 944,
+            "children": [],
+            "selfCost": 944
+           },
+           {
+            "title": "Hash",
+            "details": [],
+            "estRows": 299,
+            "cost": 18.51,
+            "children": [
+             {
+              "title": "Index Scan using customers_pkey on customers c",
+              "details": [
+               "Index Cond: (id < 300)"
+              ],
+              "estRows": 299,
+              "cost": 18.51,
+              "children": [],
+              "selfCost": 18.51
+             }
+            ],
+            "selfCost": 0
+           }
+          ],
+          "selfCost": 120.53
+         }
+        ],
+        "selfCost": 53.52
+       }
+      ],
+      "selfCost": 7.21
+     }
+    ],
+    "selfCost": 0
+   },
+   "summary": [],
+   "total": 1143.05
+  }
+ },
+ {
+  "engine": "pg",
+  "columns": [
+   {
+    "name": "QUERY PLAN",
+    "type": "json"
+   }
+  ],
+  "rows": [
+   [
+    "[\n  {\n    \"Plan\": {\n      \"Node Type\": \"Limit\",\n      \"Parallel Aware\": false,\n      \"Async Capable\": false,\n      \"Startup Cost\": 1143.02,\n      \"Total Cost\": 1143.05,\n      \"Plan Rows\": 10,\n      \"Plan Width\": 45,\n      \"Actual Startup Time\": 7.690,\n      \"Actual Total Time\": 7.692,\n      \"Actual Rows\": 10,\n      \"Actual Loops\": 1,\n      \"Shared Hit Blocks\": 323,\n      \"Shared Read Blocks\": 0,\n      \"Shared Dirtied Blocks\": 0,\n      \"Shared Written Blocks\": 0,\n      \"Local Hit Blocks\": 0,\n      \"Local Read Blocks\": 0,\n      \"Local Dirtied Blocks\": 0,\n      \"Local Written Blocks\": 0,\n      \"Temp Read Blocks\": 0,\n      \"Temp Written Blocks\": 0,\n      \"Plans\": [\n        {\n          \"Node Type\": \"Sort\",\n          \"Parent Relationship\": \"Outer\",\n          \"Parallel Aware\": false,\n          \"Async Capable\": false,\n          \"Startup Cost\": 1143.02,\n          \"Total Cost\": 1143.77,\n          \"Plan Rows\": 299,\n          \"Plan Width\": 45,\n          \"Actual Startup Time\": 7.689,\n          \"Actual Total Time\": 7.690,\n          \"Actual Rows\": 10,\n          \"Actual Loops\": 1,\n          \"Sort Key\": [\"(sum(o.total)) DESC\"],\n          \"Sort Method\": \"top-N heapsort\",\n          \"Sort Space Used\": 26,\n          \"Sort Space Type\": \"Memory\",\n          \"Shared Hit Blocks\": 323,\n          \"Shared Read Blocks\": 0,\n          \"Shared Dirtied Blocks\": 0,\n          \"Shared Written Blocks\": 0,\n          \"Local Hit Blocks\": 0,\n          \"Local Read Blocks\": 0,\n          \"Local Dirtied Blocks\": 0,\n          \"Local Written Blocks\": 0,\n          \"Temp Read Blocks\": 0,\n          \"Temp Written Blocks\": 0,\n          \"Plans\": [\n            {\n              \"Node Type\": \"Aggregate\",\n              \"Strategy\": \"Hashed\",\n              \"Partial Mode\": \"Simple\",\n              \"Parent Relationship\": \"Outer\",\n              \"Parallel Aware\": false,\n              \"Async Capable\": false,\n              \"Startup Cost\": 1132.82,\n              \"Total Cost\": 1136.56,\n              \"Plan Rows\": 299,\n              \"Plan Width\": 45,\n              \"Actual Startup Time\": 7.597,\n              \"Actual Total Time\": 7.641,\n              \"Actual Rows\": 299,\n              \"Actual Loops\": 1,\n              \"Group Key\": [\"c.name\"],\n              \"Planned Partitions\": 0,\n              \"HashAgg Batches\": 1,\n              \"Peak Memory Usage\": 157,\n              \"Disk Usage\": 0,\n              \"Shared Hit Blocks\": 323,\n              \"Shared Read Blocks\": 0,\n              \"Shared Dirtied Blocks\": 0,\n              \"Shared Written Blocks\": 0,\n              \"Local Hit Blocks\": 0,\n              \"Local Read Blocks\": 0,\n              \"Local Dirtied Blocks\": 0,\n              \"Local Written Blocks\": 0,\n              \"Temp Read Blocks\": 0,\n              \"Temp Written Blocks\": 0,\n              \"Plans\": [\n                {\n                  \"Node Type\": \"Hash Join\",\n                  \"Parent Relationship\": \"Outer\",\n                  \"Parallel Aware\": false,\n                  \"Async Capable\": false,\n                  \"Join Type\": \"Inner\",\n                  \"Startup Cost\": 22.25,\n                  \"Total Cost\": 1083.04,\n                  \"Plan Rows\": 6638,\n                  \"Plan Width\": 9,\n                  \"Actual Startup Time\": 0.096,\n                  \"Actual Total Time\": 6.574,\n                  \"Actual Rows\": 6624,\n                  \"Actual Loops\": 1,\n                  \"Inner Unique\": true,\n                  \"Hash Cond\": \"(o.customer_id = c.id)\",\n                  \"Shared Hit Blocks\": 323,\n                  \"Shared Read Blocks\": 0,\n                  \"Shared Dirtied Blocks\": 0,\n                  \"Shared Written Blocks\": 0,\n                  \"Local Hit Blocks\": 0,\n                  \"Local Read Blocks\": 0,\n                  \"Local Dirtied Blocks\": 0,\n                  \"Local Written Blocks\": 0,\n                  \"Temp Read Blocks\": 0,\n                  \"Temp Written Blocks\": 0,\n                  \"Plans\": [\n                    {\n                      \"Node Type\": \"Seq Scan\",\n                      \"Parent Relationship\": \"Outer\",\n                      \"Parallel Aware\": false,\n                      \"Async Capable\": false,\n                      \"Relation Name\": \"orders\",\n                      \"Alias\": \"o\",\n                      \"Startup Cost\": 0.00,\n                      \"Total Cost\": 944.00,\n                      \"Plan Rows\": 44398,\n                      \"Plan Width\": 8,\n                      \"Actual Startup Time\": 0.010,\n                      \"Actual Total Time\": 3.872,\n                      \"Actual Rows\": 44325,\n                      \"Actual Loops\": 1,\n                      \"Filter\": \"(total > '10'::numeric)\",\n                      \"Rows Removed by Filter\": 5675,\n                      \"Shared Hit Blocks\": 319,\n                      \"Shared Read Blocks\": 0,\n                      \"Shared Dirtied Blocks\": 0,\n                      \"Shared Written Blocks\": 0,\n                      \"Local Hit Blocks\": 0,\n                      \"Local Read Blocks\": 0,\n                      \"Local Dirtied Blocks\": 0,\n                      \"Local Written Blocks\": 0,\n                      \"Temp Read Blocks\": 0,\n                      \"Temp Written Blocks\": 0\n                    },\n                    {\n                      \"Node Type\": \"Hash\",\n                      \"Parent Relationship\": \"Inner\",\n                      \"Parallel Aware\": false,\n                      \"Async Capable\": false,\n                      \"Startup Cost\": 18.51,\n                      \"Total Cost\": 18.51,\n                      \"Plan Rows\": 299,\n                      \"Plan Width\": 9,\n                      \"Actual Startup Time\": 0.070,\n                      \"Actual Total Time\": 0.070,\n                      \"Actual Rows\": 299,\n                      \"Actual Loops\": 1,\n                      \"Hash Buckets\": 1024,\n                      \"Original Hash Buckets\": 1024,\n                      \"Hash Batches\": 1,\n                      \"Original Hash Batches\": 1,\n                      \"Peak Memory Usage\": 21,\n                      \"Shared Hit Blocks\": 4,\n                      \"Shared Read Blocks\": 0,\n                      \"Shared Dirtied Blocks\": 0,\n                      \"Shared Written Blocks\": 0,\n                      \"Local Hit Blocks\": 0,\n                      \"Local Read Blocks\": 0,\n                      \"Local Dirtied Blocks\": 0,\n                      \"Local Written Blocks\": 0,\n                      \"Temp Read Blocks\": 0,\n                      \"Temp Written Blocks\": 0,\n                      \"Plans\": [\n                        {\n                          \"Node Type\": \"Index Scan\",\n                          \"Parent Relationship\": \"Outer\",\n                          \"Parallel Aware\": false,\n                          \"Async Capable\": false,\n                          \"Scan Direction\": \"Forward\",\n                          \"Index Name\": \"customers_pkey\",\n                          \"Relation Name\": \"customers\",\n                          \"Alias\": \"c\",\n                          \"Startup Cost\": 0.28,\n                          \"Total Cost\": 18.51,\n                          \"Plan Rows\": 299,\n                          \"Plan Width\": 9,\n                          \"Actual Startup Time\": 0.011,\n                          \"Actual Total Time\": 0.037,\n                          \"Actual Rows\": 299,\n                          \"Actual Loops\": 1,\n                          \"Index Cond\": \"(id < 300)\",\n                          \"Rows Removed by Index Recheck\": 0,\n                          \"Shared Hit Blocks\": 4,\n                          \"Shared Read Blocks\": 0,\n                          \"Shared Dirtied Blocks\": 0,\n                          \"Shared Written Blocks\": 0,\n                          \"Local Hit Blocks\": 0,\n                          \"Local Read Blocks\": 0,\n                          \"Local Dirtied Blocks\": 0,\n                          \"Local Written Blocks\": 0,\n                          \"Temp Read Blocks\": 0,\n                          \"Temp Written Blocks\": 0\n                        }\n                      ]\n                    }\n                  ]\n                }\n              ]\n            }\n          ]\n        }\n      ]\n    },\n    \"Planning\": {\n      \"Shared Hit Blocks\": 12,\n      \"Shared Read Blocks\": 0,\n      \"Shared Dirtied Blocks\": 0,\n      \"Shared Written Blocks\": 0,\n      \"Local Hit Blocks\": 0,\n      \"Local Read Blocks\": 0,\n      \"Local Dirtied Blocks\": 0,\n      \"Local Written Blocks\": 0,\n      \"Temp Read Blocks\": 0,\n      \"Temp Written Blocks\": 0\n    },\n    \"Planning Time\": 0.216,\n    \"Triggers\": [\n    ],\n    \"Execution Time\": 7.773\n  }\n]"
+   ]
+  ],
+  "plan": {
+   "analyze": true,
+   "root": {
+    "title": "Limit",
+    "details": [
+     "Shared Hit Blocks: 323"
+    ],
+    "estRows": 10,
+    "rows": 10,
+    "loops": 1,
+    "cost": 1143.05,
+    "time": 7.692,
+    "children": [
+     {
+      "title": "Sort",
+      "details": [
+       "Sort Key: (sum(o.total)) DESC",
+       "Sort Method: top-N heapsort",
+       "Sort Space Used: 26 kB",
+       "Sort Space Type: Memory",
+       "Shared Hit Blocks: 323"
+      ],
+      "estRows": 299,
+      "rows": 10,
+      "loops": 1,
+      "cost": 1143.77,
+      "time": 7.69,
+      "children": [
+       {
+        "title": "HashAggregate",
+        "details": [
+         "Group Key: c.name",
+         "HashAgg Batches: 1",
+         "Peak Memory Usage: 157 kB",
+         "Shared Hit Blocks: 323"
+        ],
+        "estRows": 299,
+        "rows": 299,
+        "loops": 1,
+        "cost": 1136.56,
+        "time": 7.641,
+        "children": [
+         {
+          "title": "Hash Join",
+          "details": [
+           "Hash Cond: (o.customer_id = c.id)",
+           "Shared Hit Blocks: 323"
+          ],
+          "estRows": 6638,
+          "rows": 6624,
+          "loops": 1,
+          "cost": 1083.04,
+          "time": 6.574,
+          "children": [
+           {
+            "title": "Seq Scan on orders o",
+            "details": [
+             "Filter: (total > '10'::numeric)",
+             "Rows Removed by Filter: 5675",
+             "Shared Hit Blocks: 319"
+            ],
+            "estRows": 44398,
+            "rows": 44325,
+            "loops": 1,
+            "cost": 944,
+            "time": 3.872,
+            "children": [],
+            "self": 3.872,
+            "selfCost": 944
+           },
+           {
+            "title": "Hash",
+            "details": [
+             "Hash Buckets: 1024",
+             "Hash Batches: 1",
+             "Peak Memory Usage: 21 kB",
+             "Shared Hit Blocks: 4"
+            ],
+            "estRows": 299,
+            "rows": 299,
+            "loops": 1,
+            "cost": 18.51,
+            "time": 0.07,
+            "children": [
+             {
+              "title": "Index Scan using customers_pkey on customers c",
+              "details": [
+               "Index Cond: (id < 300)",
+               "Shared Hit Blocks: 4"
+              ],
+              "estRows": 299,
+              "rows": 299,
+              "loops": 1,
+              "cost": 18.51,
+              "time": 0.037,
+              "children": [],
+              "self": 0.037,
+              "selfCost": 18.51
+             }
+            ],
+            "self": 0.033,
+            "selfCost": 0
+           }
+          ],
+          "self": 2.632,
+          "selfCost": 120.53
+         }
+        ],
+        "self": 1.067,
+        "selfCost": 53.52
+       }
+      ],
+      "self": 0.049,
+      "selfCost": 7.21
+     }
+    ],
+    "self": 0.002,
+    "selfCost": 0
+   },
+   "summary": [
+    "Planning 0.216 ms",
+    "Execution 7.773 ms"
+   ],
+   "total": 7.773
+  }
+ },
+ {
+  "engine": "my",
+  "columns": [
+   {
+    "name": "EXPLAIN",
+    "type": "VAR_STRING"
+   }
+  ],
+  "rows": [
+   [
+    "{\n  \"query_block\": {\n    \"select_id\": 1,\n    \"cost_info\": {\n      \"query_cost\": \"2511.63\"\n    },\n    \"ordering_operation\": {\n      \"using_filesort\": true,\n      \"grouping_operation\": {\n        \"using_temporary_table\": true,\n        \"using_filesort\": false,\n        \"nested_loop\": [\n          {\n            \"table\": {\n              \"table_name\": \"c\",\n              \"access_type\": \"range\",\n              \"possible_keys\": [\n                \"PRIMARY\"\n              ],\n              \"key\": \"PRIMARY\",\n              \"used_key_parts\": [\n                \"id\"\n              ],\n              \"key_length\": \"4\",\n              \"rows_examined_per_scan\": 299,\n              \"rows_produced_per_join\": 299,\n              \"filtered\": \"100.00\",\n              \"cost_info\": {\n                \"read_cost\": \"30.23\",\n                \"eval_cost\": \"29.90\",\n                \"prefix_cost\": \"60.13\",\n                \"data_read_per_join\": \"60K\"\n              },\n              \"used_columns\": [\n                \"id\",\n                \"name\"\n              ],\n              \"attached_condition\": \"(`shop`.`c`.`id` < 300)\"\n            }\n          },\n          {\n            \"table\": {\n              \"table_name\": \"o\",\n              \"access_type\": \"ref\",\n              \"possible_keys\": [\n                \"customer_id\"\n              ],\n              \"key\": \"customer_id\",\n              \"used_key_parts\": [\n                \"customer_id\"\n              ],\n              \"key_length\": \"5\",\n              \"ref\": [\n                \"shop.c.id\"\n              ],\n              \"rows_examined_per_scan\": 23,\n              \"rows_produced_per_join\": 2334,\n              \"filtered\": \"33.33\",\n              \"cost_info\": {\n                \"read_cost\": \"1751.08\",\n                \"eval_cost\": \"233.45\",\n                \"prefix_cost\": \"2511.63\",\n                \"data_read_per_join\": \"54K\"\n              },\n              \"used_columns\": [\n                \"id\",\n                \"customer_id\",\n                \"total\"\n              ],\n              \"attached_condition\": \"(`shop`.`o`.`total` > 10.00)\"\n            }\n          }\n        ]\n      }\n    }\n  }\n}"
+   ]
+  ],
+  "plan": {
+   "analyze": false,
+   "root": {
+    "title": "query block #1",
+    "details": [
+     "cost: query cost 2511.63"
+    ],
+    "children": [
+     {
+      "title": "ordering operation",
+      "details": [
+       "using filesort: yes"
+      ],
+      "children": [
+       {
+        "title": "grouping operation",
+        "details": [
+         "using temporary table: yes",
+         "using filesort: no"
+        ],
+        "children": [
+         {
+          "title": "range on c using PRIMARY",
+          "details": [
+           "possible keys: PRIMARY",
+           "used key parts: id",
+           "key length: 4",
+           "filtered: 100.00",
+           "cost: read cost 30.23, eval cost 29.90, prefix cost 60.13, data read per join 60K",
+           "used columns: id, name",
+           "attached condition: (`shop`.`c`.`id` < 300)"
+          ],
+          "children": [],
+          "cost": 60.13,
+          "selfCost": 60.13,
+          "estRows": 299
+         },
+         {
+          "title": "ref on o using customer_id",
+          "details": [
+           "possible keys: customer_id",
+           "used key parts: customer_id",
+           "key length: 5",
+           "ref: shop.c.id",
+           "filtered: 33.33",
+           "cost: read cost 1751.08, eval cost 233.45, prefix cost 2511.63, data read per join 54K",
+           "used columns: id, customer_id, total",
+           "attached condition: (`shop`.`o`.`total` > 10.00)"
+          ],
+          "children": [],
+          "cost": 2511.63,
+          "selfCost": 1984.53,
+          "estRows": 2334
+         }
+        ]
+       }
+      ]
+     }
+    ],
+    "cost": 2511.63,
+    "selfCost": 466.97
+   },
+   "summary": [
+    "Query cost 2511.63"
+   ],
+   "total": 2511.63
+  }
+ },
+ {
+  "engine": "my",
+  "columns": [
+   {
+    "name": "EXPLAIN",
+    "type": "VAR_STRING"
+   }
+  ],
+  "rows": [
+   [
+    "-> Limit: 10 row(s)  (actual time=8.06..8.06 rows=10 loops=1)\n    -> Sort: `sum(o.total)` DESC, limit input to 10 row(s) per chunk  (actual time=8.06..8.06 rows=10 loops=1)\n        -> Table scan on <temporary>  (actual time=7.99..8.02 rows=299 loops=1)\n            -> Aggregate using temporary table  (actual time=7.99..7.99 rows=299 loops=1)\n                -> Nested loop inner join  (cost=2512 rows=2335) (actual time=0.0768..5.95 rows=6624 loops=1)\n                    -> Filter: (c.id < 300)  (cost=60.1 rows=299) (actual time=0.0159..0.0879 rows=299 loops=1)\n                        -> Index range scan on c using PRIMARY over (id < 300)  (cost=60.1 rows=299) (actual time=0.0144..0.0651 rows=299 loops=1)\n                    -> Filter: (o.total > 10.00)  (cost=5.86 rows=7.81) (actual time=0.0152..0.0183 rows=22.2 loops=299)\n                        -> Index lookup on o using customer_id (customer_id=c.id)  (cost=5.86 rows=23.4) (actual time=0.0151..0.0163 rows=25 loops=299)\n"
+   ]
+  ],
+  "plan": {
+   "analyze": true,
+   "root": {
+    "title": "Limit: 10 row(s)",
+    "details": [],
+    "children": [
+     {
+      "title": "Sort: `sum(o.total)` DESC, limit input to 10 row(s) per chunk",
+      "details": [],
+      "children": [
+       {
+        "title": "Table scan on <temporary>",
+        "details": [],
+        "children": [
+         {
+          "title": "Aggregate using temporary table",
+          "details": [],
+          "children": [
+           {
+            "title": "Nested loop inner join",
+            "details": [],
+            "children": [
+             {
+              "title": "Filter: (c.id < 300)",
+              "details": [],
+              "children": [
+               {
+                "title": "Index range scan on c using PRIMARY over (id < 300)",
+                "details": [],
+                "children": [],
+                "cost": 60.1,
+                "estRows": 299,
+                "loops": 1,
+                "rows": 299,
+                "time": 0.065,
+                "self": 0.065,
+                "selfCost": 60.1
+               }
+              ],
+              "cost": 60.1,
+              "estRows": 299,
+              "loops": 1,
+              "rows": 299,
+              "time": 0.088,
+              "self": 0.023,
+              "selfCost": 0
+             },
+             {
+              "title": "Filter: (o.total > 10.00)",
+              "details": [],
+              "children": [
+               {
+                "title": "Index lookup on o using customer_id (customer_id=c.id)",
+                "details": [],
+                "children": [],
+                "cost": 5.86,
+                "estRows": 6996.6,
+                "loops": 299,
+                "rows": 7475,
+                "time": 4.874,
+                "self": 4.874,
+                "selfCost": 5.86
+               }
+              ],
+              "cost": 5.86,
+              "estRows": 2335.19,
+              "loops": 299,
+              "rows": 6637.8,
+              "time": 5.472,
+              "self": 0.598,
+              "selfCost": 0
+             }
+            ],
+            "cost": 2512,
+            "estRows": 2335,
+            "loops": 1,
+            "rows": 6624,
+            "time": 5.95,
+            "self": 0.39,
+            "selfCost": 2446.04
+           }
+          ],
+          "loops": 1,
+          "rows": 299,
+          "time": 7.99,
+          "self": 2.04
+         }
+        ],
+        "loops": 1,
+        "rows": 299,
+        "time": 8.02,
+        "self": 0.03
+       }
+      ],
+      "loops": 1,
+      "rows": 10,
+      "time": 8.06,
+      "self": 0.04
+     }
+    ],
+    "loops": 1,
+    "rows": 10,
+    "time": 8.06,
+    "self": 0
+   },
+   "summary": [],
+   "total": 8.06
+  }
+ },
+ {
+  "engine": "my",
+  "columns": [
+   {
+    "name": "EXPLAIN",
+    "type": "VAR_STRING"
+   }
+  ],
+  "rows": [
+   [
+    "{\n  \"query_block\": {\n    \"select_id\": 1,\n    \"cost\": 7.89943505,\n    \"filesort\": {\n      \"sort_key\": \"sum(o.total) desc\",\n      \"temporary_table\": {\n        \"nested_loop\": [\n          {\n            \"table\": {\n              \"table_name\": \"c\",\n              \"access_type\": \"range\",\n              \"possible_keys\": [\"PRIMARY\"],\n              \"key\": \"PRIMARY\",\n              \"key_length\": \"4\",\n              \"used_key_parts\": [\"id\"],\n              \"loops\": 1,\n              \"rows\": 299,\n              \"cost\": 0.06408017,\n              \"filtered\": 100,\n              \"attached_condition\": \"c.`id` < 300\"\n            }\n          },\n          {\n            \"table\": {\n              \"table_name\": \"o\",\n              \"access_type\": \"ref\",\n              \"possible_keys\": [\"customer_id\"],\n              \"key\": \"customer_id\",\n              \"key_length\": \"5\",\n              \"used_key_parts\": [\"customer_id\"],\n              \"ref\": [\"shop.c.id\"],\n              \"loops\": 299,\n              \"rows\": 25,\n              \"cost\": 7.83535488,\n              \"filtered\": 100,\n              \"attached_condition\": \"o.total > 10\"\n            }\n          }\n        ]\n      }\n    }\n  }\n}"
+   ]
+  ],
+  "plan": {
+   "analyze": false,
+   "root": {
+    "title": "query block #1",
+    "details": [],
+    "children": [
+     {
+      "title": "filesort",
+      "details": [
+       "sort key: sum(o.total) desc"
+      ],
+      "children": [
+       {
+        "title": "temporary table",
+        "details": [],
+        "children": [
+         {
+          "title": "range on c using PRIMARY",
+          "details": [
+           "possible keys: PRIMARY",
+           "key length: 4",
+           "used key parts: id",
+           "filtered: 100",
+           "attached condition: c.`id` < 300"
+          ],
+          "children": [],
+          "estRows": 299,
+          "cost": 0.06408017,
+          "selfCost": 0.064
+         },
+         {
+          "title": "ref on o using customer_id",
+          "details": [
+           "possible keys: customer_id",
+           "key length: 5",
+           "used key parts: customer_id",
+           "ref: shop.c.id",
+           "filtered: 100",
+           "attached condition: o.total > 10"
+          ],
+          "children": [],
+          "estRows": 7475,
+          "cost": 7.83535488,
+          "selfCost": 7.835
+         }
+        ]
+       }
+      ]
+     }
+    ],
+    "cost": 7.89943505,
+    "selfCost": 0
+   },
+   "summary": [],
+   "total": 7.89943505
+  }
+ },
+ {
+  "engine": "my",
+  "columns": [
+   {
+    "name": "EXPLAIN",
+    "type": "VAR_STRING"
+   }
+  ],
+  "rows": [
+   [
+    "{\n  \"query_optimization\": {\n    \"r_total_time_ms\": 0.055891223\n  },\n  \"query_block\": {\n    \"select_id\": 1,\n    \"cost\": 7.89943505,\n    \"r_loops\": 1,\n    \"r_total_time_ms\": 5.824572737,\n    \"filesort\": {\n      \"sort_key\": \"sum(o.total) desc\",\n      \"r_loops\": 1,\n      \"r_total_time_ms\": 0.016858794,\n      \"r_limit\": 10,\n      \"r_used_priority_queue\": true,\n      \"r_output_rows\": 11,\n      \"r_sort_mode\": \"sort_key,rowid\",\n      \"temporary_table\": {\n        \"nested_loop\": [\n          {\n            \"table\": {\n              \"table_name\": \"c\",\n              \"access_type\": \"range\",\n              \"possible_keys\": [\"PRIMARY\"],\n              \"key\": \"PRIMARY\",\n              \"key_length\": \"4\",\n              \"used_key_parts\": [\"id\"],\n              \"loops\": 1,\n              \"r_loops\": 1,\n              \"rows\": 299,\n              \"r_rows\": 299,\n              \"cost\": 0.06408017,\n              \"r_table_time_ms\": 0.03275308,\n              \"r_other_time_ms\": 0.029638524,\n              \"r_engine_stats\": {\n                \"pages_accessed\": 9\n              },\n              \"filtered\": 100,\n              \"r_total_filtered\": 100,\n              \"attached_condition\": \"c.`id` < 300\",\n              \"r_filtered\": 100\n            }\n          },\n          {\n            \"table\": {\n              \"table_name\": \"o\",\n              \"access_type\": \"ref\",\n              \"possible_keys\": [\"customer_id\"],\n              \"key\": \"customer_id\",\n              \"key_length\": \"5\",\n              \"used_key_parts\": [\"customer_id\"],\n              \"ref\": [\"shop.c.id\"],\n              \"loops\": 299,\n              \"r_loops\": 299,\n              \"rows\": 25,\n              \"r_rows\": 25,\n              \"cost\": 7.83535488,\n              \"r_table_time_ms\": 3.616723749,\n              \"r_other_time_ms\": 2.1204706,\n              \"r_engine_stats\": {\n                \"pages_accessed\": 15567\n              },\n              \"filtered\": 100,\n              \"r_total_filtered\": 88.61538462,\n              \"attached_condition\": \"o.total > 10\",\n              \"r_filtered\": 88.61538462\n            }\n          }\n        ]\n      }\n    }\n  }\n}"
+   ]
+  ],
+  "plan": {
+   "analyze": true,
+   "root": {
+    "title": "query block #1",
+    "details": [],
+    "children": [
+     {
+      "title": "filesort",
+      "details": [
+       "sort key: sum(o.total) desc",
+       "actual limit: 10",
+       "actual used priority queue: yes",
+       "actual output rows: 11",
+       "actual sort mode: sort_key,rowid"
+      ],
+      "children": [
+       {
+        "title": "temporary table",
+        "details": [],
+        "children": [
+         {
+          "title": "range on c using PRIMARY",
+          "details": [
+           "possible keys: PRIMARY",
+           "key length: 4",
+           "used key parts: id",
+           "actual engine stats: pages accessed 9",
+           "filtered: 100",
+           "actual total filtered: 100",
+           "attached condition: c.`id` < 300",
+           "actual filtered: 100"
+          ],
+          "children": [],
+          "estRows": 299,
+          "cost": 0.06408017,
+          "rows": 299,
+          "loops": 1,
+          "self": 0.062,
+          "time": 0.062,
+          "selfCost": 0.064
+         },
+         {
+          "title": "ref on o using customer_id",
+          "details": [
+           "possible keys: customer_id",
+           "key length: 5",
+           "used key parts: customer_id",
+           "ref: shop.c.id",
+           "actual engine stats: pages accessed 15567",
+           "filtered: 100",
+           "actual total filtered: 88.61538462",
+           "attached condition: o.total > 10",
+           "actual filtered: 88.61538462"
+          ],
+          "children": [],
+          "estRows": 7475,
+          "cost": 7.83535488,
+          "rows": 7475,
+          "loops": 299,
+          "self": 5.737,
+          "time": 5.737,
+          "selfCost": 7.835
+         }
+        ],
+        "self": 0,
+        "time": 5.799
+       }
+      ],
+      "loops": 1,
+      "self": 0.017,
+      "time": 5.816
+     }
+    ],
+    "cost": 7.89943505,
+    "loops": 1,
+    "time": 5.825,
+    "self": 0.009,
+    "selfCost": 0
+   },
+   "summary": [
+    "Execution 5.825 ms"
+   ],
+   "total": 5.825
+  }
+ },
+ {
+  "engine": "pg",
+  "columns": [
+   {
+    "name": "id",
+    "type": "int4"
+   }
+  ],
+  "rows": [
+   [
+    "1"
+   ]
+  ],
+  "plan": null
+ },
+ {
+  "engine": "pg",
+  "columns": [
+   {
+    "name": "QUERY PLAN",
+    "type": "text"
+   }
+  ],
+  "rows": [
+   [
+    "Seq Scan on t  (cost=0.00..1.00 rows=1 width=4)"
+   ]
+  ],
+  "plan": null
+ },
+ {
+  "engine": "pg",
+  "columns": [
+   {
+    "name": "QUERY PLAN",
+    "type": "json"
+   }
+  ],
+  "rows": [
+   [
+    "{broken"
+   ]
+  ],
+  "plan": null
+ },
+ {
+  "engine": "pg",
+  "columns": [
+   {
+    "name": "QUERY PLAN",
+    "type": "json"
+   }
+  ],
+  "rows": [
+   [
+    "[{\"Plan\": {\"Node Type\": \"Seq Scan\", \"Relation Name\": \"t\", \"Schema\": \"public\", \"Alias\": \"x\", \"Total Cost\": 1.5, \"Plan Rows\": 10, \"Disabled\": true, \"Filter\": \"(a > 1)\", \"Rows Removed by Filter\": 0, \"Workers Launched\": 0, \"Sort Key\": [\"a\", \"b DESC\"], \"Peak Memory Usage\": 12, \"Original Hash Buckets\": 1024, \"Hash Buckets\": 1024, \"Original Hash Batches\": 2, \"Hash Batches\": 4, \"Parallel Aware\": true, \"Scan Direction\": \"Backward\", \"Index Name\": \"i\", \"Parent Relationship\": \"SubPlan\", \"Inner Unique\": false}}]"
+   ]
+  ],
+  "plan": {
+   "analyze": false,
+   "root": {
+    "title": "Parallel Seq Scan Backward using i on public.t x (disabled)",
+    "details": [
+     "Disabled: its enable_* setting is off, but no other plan was possible",
+     "Filter: (a > 1)",
+     "Workers Launched: 0",
+     "Sort Key: a, b DESC",
+     "Peak Memory Usage: 12 kB",
+     "Hash Buckets: 1024",
+     "Original Hash Batches: 2",
+     "Hash Batches: 4",
+     "Parent Relationship: SubPlan"
+    ],
+    "estRows": 10,
+    "cost": 1.5,
+    "children": [],
+    "selfCost": 1.5
+   },
+   "summary": [],
+   "total": 1.5
+  }
+ },
+ {
+  "engine": "pg",
+  "columns": [
+   {
+    "name": "QUERY PLAN",
+    "type": "json"
+   }
+  ],
+  "rows": [
+   [
+    "[{\"Plan\": {\"Node Type\": \"ModifyTable\", \"Operation\": \"Update\", \"Relation Name\": \"t\", \"Plans\": [{\"Node Type\": \"Nested Loop\", \"Join Type\": \"Anti\", \"Plans\": [{\"Node Type\": \"Aggregate\", \"Strategy\": \"Hashed\", \"Partial Mode\": \"Partial\", \"Actual Loops\": 3, \"Actual Total Time\": 0.5, \"Actual Rows\": 7, \"Plan Rows\": 2}, {\"Node Type\": \"Function Scan\", \"Function Name\": \"generate_series\", \"Alias\": \"g\", \"Actual Loops\": 0}]}], \"Actual Loops\": 1, \"Actual Total Time\": 2.25, \"Total Cost\": 10}, \"Planning Time\": 0.1, \"Execution Time\": 2.5, \"Triggers\": [{\"Trigger Name\": \"trg\", \"Relation\": \"t\", \"Time\": 0.3, \"Calls\": 2}], \"JIT\": {\"Functions\": 4}}]"
+   ]
+  ],
+  "plan": {
+   "analyze": true,
+   "root": {
+    "title": "Update on t",
+    "details": [],
+    "loops": 1,
+    "cost": 10,
+    "time": 2.25,
+    "children": [
+     {
+      "title": "Nested Loop Anti Join",
+      "details": [],
+      "loops": 1,
+      "children": [
+       {
+        "title": "Partial HashAggregate",
+        "details": [],
+        "estRows": 6,
+        "rows": 21,
+        "loops": 3,
+        "time": 1.5,
+        "children": [],
+        "self": 1.5
+       },
+       {
+        "title": "Function Scan on generate_series g",
+        "details": [],
+        "loops": 0,
+        "children": []
+       }
+      ]
+     }
+    ],
+    "self": 2.25,
+    "selfCost": 10
+   },
+   "summary": [
+    "Planning 0.1 ms",
+    "Execution 2.5 ms",
+    "Trigger trg on t: 0.3 ms, 2 call(s)",
+    "JIT: 4 function(s)"
+   ],
+   "total": 2.5
+  }
+ },
+ {
+  "engine": "my",
+  "columns": [
+   {
+    "name": "id",
+    "type": "LONG"
+   }
+  ],
+  "rows": [
+   [
+    "1"
+   ]
+  ],
+  "plan": null
+ },
+ {
+  "engine": "my",
+  "columns": [
+   {
+    "name": "EXPLAIN",
+    "type": "VAR_STRING"
+   }
+  ],
+  "rows": [
+   [
+    "not a plan"
+   ]
+  ],
+  "plan": null
+ },
+ {
+  "engine": "my",
+  "columns": [
+   {
+    "name": "EXPLAIN",
+    "type": "VAR_STRING"
+   }
+  ],
+  "rows": [
+   [
+    "{broken"
+   ]
+  ],
+  "plan": null
+ },
+ {
+  "engine": "my",
+  "columns": [
+   {
+    "name": "EXPLAIN",
+    "type": "VAR_STRING"
+   }
+  ],
+  "rows": [
+   [
+    "-> Nested loop inner join  (cost=1.5 rows=2)\n    -> Table scan on a  (cost=0.25 rows=1) (actual time=0.01..0.02 rows=1 loops=1)\n    -> Filter: (b.x = a.x)\n        a wrapped line\n        -> Index lookup on b (never executed)\n-> Second top  (cost=1e+3 rows=5)"
+   ]
+  ],
+  "plan": {
+   "analyze": true,
+   "root": {
+    "title": "plan",
+    "details": [],
+    "children": [
+     {
+      "title": "Nested loop inner join",
+      "details": [],
+      "children": [
+       {
+        "title": "Table scan on a",
+        "details": [],
+        "children": [],
+        "cost": 0.25,
+        "estRows": 1,
+        "loops": 1,
+        "rows": 1,
+        "time": 0.02,
+        "self": 0.02,
+        "selfCost": 0.25
+       },
+       {
+        "title": "Filter: (b.x = a.x) a wrapped line",
+        "details": [],
+        "children": [
+         {
+          "title": "Index lookup on b",
+          "details": [
+           "never executed"
+          ],
+          "children": []
+         }
+        ]
+       }
+      ],
+      "cost": 1.5,
+      "estRows": 2,
+      "selfCost": 1.25
+     },
+     {
+      "title": "Second top",
+      "details": [],
+      "children": [],
+      "cost": 1000,
+      "estRows": 5,
+      "selfCost": 1000
+     }
+    ]
+   },
+   "summary": [],
+   "total": 0
+  }
+ },
+ {
+  "engine": "my",
+  "columns": [
+   {
+    "name": "ANALYZE",
+    "type": "VAR_STRING"
+   }
+  ],
+  "rows": [
+   [
+    "{\"query_block\": {\"select_id\": 1, \"r_loops\": 1, \"r_total_time_ms\": 1.5, \"table\": {\"table_name\": \"t\", \"access_type\": \"ALL\", \"rows\": 10, \"r_rows\": 10, \"r_loops\": 1, \"r_table_time_ms\": 0.4, \"r_other_time_ms\": 0.1, \"filtered\": 100, \"attached_condition\": \"t.a > 1\", \"possible_keys\": [\"a\", \"b\"], \"used_key_parts\": []}}}"
+   ]
+  ],
+  "plan": {
+   "analyze": true,
+   "root": {
+    "title": "query block #1",
+    "details": [],
+    "children": [
+     {
+      "title": "ALL on t",
+      "details": [
+       "filtered: 100",
+       "attached condition: t.a > 1",
+       "possible keys: a, b"
+      ],
+      "children": [],
+      "estRows": 10,
+      "rows": 10,
+      "loops": 1,
+      "self": 0.5,
+      "time": 0.5
+     }
+    ],
+    "loops": 1,
+    "time": 1.5,
+    "self": 1
+   },
+   "summary": [
+    "Execution 1.5 ms"
+   ],
+   "total": 1.5
+  }
+ }
+]

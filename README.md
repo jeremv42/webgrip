@@ -1,6 +1,7 @@
 # WebGrip
 
-A mini web DataGrip in TypeScript: Node (Express, `pg`, `mysql2`) + Vue 3 / Vuetify, no store.
+A mini web DataGrip: a Rust API (axum, a small PostgreSQL wire client, `mysql_async`) + Vue 3 / Vuetify, no store.
+Runs as a web app (behind Vite) or as a desktop app (Tauri).
 
 - Access protected by a password (`WEBGRIP_PASSWORD`), session kept for 30 days by a cookie
 - PostgreSQL and MariaDB/MySQL connections, saved encrypted (AES-256-GCM, key `WEBGRIP_SECRET`) in `data/connections.json`
@@ -30,23 +31,23 @@ A mini web DataGrip in TypeScript: Node (Express, `pg`, `mysql2`) + Vue 3 / Vuet
 ```bash
 cp .env.example .env             # then set WEBGRIP_PASSWORD and WEBGRIP_SECRET (openssl rand -base64 32)
 npm install
-npm run dev                      # Vite + API in watch mode
-npm run build && npm start       # vite preview of the build, port 5180
+npm run dev                      # Vite (hot reload) + the API (cargo run: restart it after a server change)
+npm run build && npm start       # release build of the API + vite preview of the SPA, port 5180
 ```
 
-Node ≥ 23.6: the API (`server/*.ts`) runs as is, with no build step (type stripping).
+Needs Node (the front end's tooling) and Rust (https://rustup.rs) for the API.
 
 ## Desktop app
 
 The same app as a native window (Tauri v2: the system's webview, no bundled Chromium), with no password and
-nothing else to install on the target machine: the server is shipped as a single executable.
+nothing else to install on the target machine: the API runs inside the app.
 
 ```bash
 # once: Rust (https://rustup.rs) and, on Debian/Ubuntu, the WebKitGTK headers
 sudo apt install libwebkit2gtk-4.1-dev build-essential libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
 
-npm run desktop:dev              # builds the SPA and the server executable, then opens the app
-npm run desktop:build            # installers in src-tauri/target/release/bundle/ (.deb, .rpm, AppImage / .dmg / .msi)
+npm run desktop:dev              # builds the SPA, then opens the app
+npm run desktop:build            # installers in target/release/bundle/ (.deb, .rpm, AppImage / .dmg / .msi)
 ```
 
 Packages are built for the platform you build on (a macOS or Windows machine for those). Connections are kept in
@@ -55,12 +56,16 @@ the app's data folder; the chat turns on by itself when the `claude` CLI is inst
 ## Check
 
 ```bash
-npm run typecheck                # vue-tsc (SPA) + tsc (API)
-npm run lint                     # oxlint
-npm run format                   # oxfmt (format:check to only check)
-npm test                         # Vitest (test:watch to keep running)
+npm run typecheck                # vue-tsc (SPA) + tsc (shared code, configs)
+npm run lint                     # oxlint + clippy
+npm run format                   # oxfmt + rustfmt (format:check to only check)
+npm test                         # Vitest + cargo test (test:watch: Vitest only)
 npm run check                    # all of the above
 ```
+
+The drivers' tests need scratch databases (they create tables), else they are skipped:
+`WEBGRIP_TEST_PG=host:port:user:password:db WEBGRIP_TEST_MYSQL=host:port:user:password:db cargo test --test databases`
+(several MySQL/MariaDB servers: separated by spaces).
 
 Everything goes through Vite's port (5180): it serves the front end and proxies `/api` to the backend,
 which only listens on `127.0.0.1:3070` (never exposed).

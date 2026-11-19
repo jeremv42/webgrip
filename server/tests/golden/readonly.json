@@ -1,0 +1,162 @@
+[
+ {
+  "sql": "-- count\nselect count(*) from t;",
+  "dialect": "postgres",
+  "ok": "-- count\nselect count(*) from t"
+ },
+ {
+  "sql": "-- count\nselect count(*) from t;",
+  "dialect": "mariadb",
+  "ok": "-- count\nselect count(*) from t"
+ },
+ {
+  "sql": "with x as (select 1) select * from x",
+  "dialect": "postgres",
+  "ok": "with x as (select 1) select * from x"
+ },
+ {
+  "sql": "with x as (select 1) select * from x",
+  "dialect": "mariadb",
+  "ok": "with x as (select 1) select * from x"
+ },
+ {
+  "sql": "explain select 1",
+  "dialect": "postgres",
+  "ok": "explain select 1"
+ },
+ {
+  "sql": "explain select 1",
+  "dialect": "mariadb",
+  "ok": "explain select 1"
+ },
+ {
+  "sql": "show tables",
+  "dialect": "postgres",
+  "ok": "show tables"
+ },
+ {
+  "sql": "show tables",
+  "dialect": "mariadb",
+  "ok": "show tables"
+ },
+ {
+  "sql": "describe t",
+  "dialect": "postgres",
+  "ok": "describe t"
+ },
+ {
+  "sql": "describe t",
+  "dialect": "mariadb",
+  "ok": "describe t"
+ },
+ {
+  "sql": "desc t",
+  "dialect": "postgres",
+  "ok": "desc t"
+ },
+ {
+  "sql": "desc t",
+  "dialect": "mariadb",
+  "ok": "desc t"
+ },
+ {
+  "sql": "values (1)",
+  "dialect": "postgres",
+  "ok": "values (1)"
+ },
+ {
+  "sql": "values (1)",
+  "dialect": "mariadb",
+  "ok": "values (1)"
+ },
+ {
+  "sql": "table t",
+  "dialect": "postgres",
+  "ok": "table t"
+ },
+ {
+  "sql": "table t",
+  "dialect": "mariadb",
+  "ok": "table t"
+ },
+ {
+  "sql": "delete from t",
+  "dialect": "postgres",
+  "error": "Only read-only statements are allowed (SELECT, WITH, VALUES, TABLE, SHOW, EXPLAIN, DESCRIBE)"
+ },
+ {
+  "sql": "delete from t",
+  "dialect": "mariadb",
+  "error": "Only read-only statements are allowed (SELECT, WITH, VALUES, TABLE, SHOW, EXPLAIN, DESCRIBE)"
+ },
+ {
+  "sql": "drop table t",
+  "dialect": "postgres",
+  "error": "Only read-only statements are allowed (SELECT, WITH, VALUES, TABLE, SHOW, EXPLAIN, DESCRIBE)"
+ },
+ {
+  "sql": "drop table t",
+  "dialect": "mariadb",
+  "error": "Only read-only statements are allowed (SELECT, WITH, VALUES, TABLE, SHOW, EXPLAIN, DESCRIBE)"
+ },
+ {
+  "sql": "select 1; drop table t",
+  "dialect": "postgres",
+  "error": "Send exactly one statement"
+ },
+ {
+  "sql": "select 1; drop table t",
+  "dialect": "mariadb",
+  "error": "Send exactly one statement"
+ },
+ {
+  "sql": "",
+  "dialect": "postgres",
+  "error": "Send exactly one statement"
+ },
+ {
+  "sql": "",
+  "dialect": "mariadb",
+  "error": "Send exactly one statement"
+ },
+ {
+  "sql": "select * from t into outfile '/tmp/x'",
+  "dialect": "postgres",
+  "error": "INTO OUTFILE / DUMPFILE is not allowed"
+ },
+ {
+  "sql": "select * from t into outfile '/tmp/x'",
+  "dialect": "mariadb",
+  "error": "INTO OUTFILE / DUMPFILE is not allowed"
+ },
+ {
+  "sql": "select * from t into   DUMPFILE '/tmp/x'",
+  "dialect": "postgres",
+  "error": "INTO OUTFILE / DUMPFILE is not allowed"
+ },
+ {
+  "sql": "select * from t into   DUMPFILE '/tmp/x'",
+  "dialect": "mariadb",
+  "error": "INTO OUTFILE / DUMPFILE is not allowed"
+ },
+ {
+  "sql": "select 1;",
+  "dialect": "postgres",
+  "ok": "select 1"
+ },
+ {
+  "sql": "select 1;",
+  "dialect": "mariadb",
+  "ok": "select 1"
+ },
+ {
+  "sql": "  select 2  ",
+  "dialect": "postgres",
+  "ok": "select 2"
+ },
+ {
+  "sql": "  select 2  ",
+  "dialect": "mariadb",
+  "ok": "select 2"
+ }
+]

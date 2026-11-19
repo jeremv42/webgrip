@@ -1,0 +1,5 @@
+{
+ "secret": "test-secret-0123456789",
+ "plain": "[{\"id\":\"a\",\"password\":\"pä$$\"}]",
+ "sealed": "{\"v\":1,\"salt\":\"6mNdoPfro1MaCnucNT9isw==\",\"iv\":\"H84hsvXcdj3mJ4Ve\",\"tag\":\"S5xWD0Qfihi7OnQCG2+HlQ==\",\"data\":\"kWRY4SbzCmNyJTDs4GbfJXPzj+BIkVIJDT2UBGCebw==\"}"
+}
