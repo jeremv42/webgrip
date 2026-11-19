@@ -1,0 +1,107 @@
+# Builds the desktop app's packages and attaches them to a draft GitHub release.
+#
+#   - Linux (Ubuntu 22.04, so the packages run on glibc 2.35 and newer): .deb, .rpm, .AppImage
+#   - macOS: universal .dmg (Apple silicon + Intel), ad-hoc signed, not notarized
+#
+# Release: bump "version" in src-tauri/tauri.conf.json, commit, then `git tag v0.2.0 && git push origin v0.2.0`.
+# The draft release appears under Releases once both jobs are done; check it and publish it by hand.
+# Run by hand (Actions → Release → Run workflow) on a branch: builds only, packages kept as run artifacts.
+
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Linux
+            os: ubuntu-22.04
+            args: --bundles deb,rpm,appimage
+            bundle_dir: target/release/bundle
+          - name: macOS
+            os: macos-latest
+            args: --target universal-apple-darwin --bundles dmg
+            rust_targets: aarch64-apple-darwin,x86_64-apple-darwin
+            bundle_dir: target/universal-apple-darwin/release/bundle
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check that the tag matches the app version
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        run: |
+          version=$(node -p "require('./src-tauri/tauri.conf.json').version")
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match version $version in src-tauri/tauri.conf.json"
+            exit 1
+          fi
+
+      - name: Linux build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential libxdo-dev libssl-dev \
+            libayatana-appindicator3-dev librsvg2-dev patchelf file
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust_targets }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.name }}
+
+      - run: npm ci
+
+      - name: Build and upload to the draft release
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          args: ${{ matrix.args }}
+          # Empty outside a tag: build only, no release.
+          tagName: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || '' }}
+          releaseName: WebGrip ${{ github.ref_name }}
+          releaseBody: |
+            Desktop packages of WebGrip ${{ github.ref_name }}.
+
+            - **Debian/Ubuntu**: `sudo apt install ./WebGrip_*_amd64.deb`
+            - **Fedora/RHEL/openSUSE**: `sudo dnf install ./WebGrip-*.x86_64.rpm`
+            - **Any Linux**: `chmod +x WebGrip_*_amd64.AppImage` then run it
+            - **macOS** (universal, Apple silicon and Intel): the app is not notarized. After dragging it to
+              Applications, run `xattr -dr com.apple.quarantine /Applications/WebGrip.app` once, or allow it in
+              System Settings → Privacy & Security.
+          releaseDraft: true
+          prerelease: false
+
+      - name: Keep the packages as run artifacts (manual runs)
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: webgrip-${{ matrix.name }}
+          path: |
+            ${{ matrix.bundle_dir }}/deb/*.deb
+            ${{ matrix.bundle_dir }}/rpm/*.rpm
+            ${{ matrix.bundle_dir }}/appimage/*.AppImage
+            ${{ matrix.bundle_dir }}/dmg/*.dmg
+          if-no-files-found: error

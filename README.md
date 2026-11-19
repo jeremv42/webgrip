@@ -53,6 +53,10 @@ npm run desktop:build            # installers in target/release/bundle/ (.deb, .
 Packages are built for the platform you build on (a macOS or Windows machine for those). Connections are kept in
 the app's data folder; the chat turns on by itself when the `claude` CLI is installed. See ARCHITECTURE.md.
 
+Releases: set `version` in `src-tauri/tauri.conf.json`, then push a matching tag (`git tag v0.2.0 && git push origin
+v0.2.0`). The Release workflow builds the .deb, .rpm and AppImage (Ubuntu 22.04) and a universal .dmg (macOS, not
+notarized) and attaches them to a draft GitHub release, to publish by hand.
+
 ## Check
 
 ```bash
