@@ -6,6 +6,7 @@
     "dev": "concurrently -k -n api,web -c blue,green \"cargo run -q -p webgrip-server\" \"vite\"",
     "build": "vite build && cargo build --release -p webgrip-server",
     "start": "concurrently -k -n api,web -c blue,green \"target/release/webgrip-server\" \"vite preview\"",
+    "tauri": "tauri",
     "desktop:dev": "tauri dev",
     "desktop:build": "tauri build",
     "desktop:prepare": "vite build",
